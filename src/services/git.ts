@@ -24,40 +24,60 @@ type LogEntry = {
 };
 
 export class GitService {
-  private dir: string;
+  private baseUrl: string;
 
   constructor() {
-    this.dir = process.cwd();
+    this.baseUrl = "/api";
   }
 
   async readFile(filePath: string): Promise<string> {
-    const fullPath = path.join(this.dir, filePath);
-    return fs.promises.readFile(fullPath, "utf8");
+    const cleanPath = filePath.replace(/^content\//, "");
+    const response = await fetch(
+      `${this.baseUrl}/file?path=${encodeURIComponent(cleanPath)}`
+    );
+    if (!response.ok) {
+      throw new Error(`Failed to read file: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.content;
   }
 
   async saveFile(filePath: string, content: string): Promise<void> {
-    const fullPath = path.join(this.dir, filePath);
-    await fs.promises.writeFile(fullPath, content, "utf8");
+    const cleanPath = filePath.replace(/^content\//, "");
+    const response = await fetch(`${this.baseUrl}/file`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ path: cleanPath, content }),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to save file: ${response.statusText}`);
+    }
   }
 
   async commitChanges(message: string): Promise<string> {
-    await git.add({ fs, dir: this.dir, filepath: "." });
-
-    const commitResult = await git.commit({
-      fs,
-      dir: this.dir,
-      message,
-      author: {
-        name: "JSON CMS",
-        email: "json-cms@example.com",
+    const response = await fetch(`${this.baseUrl}/git/commit`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({ message }),
     });
-
-    return commitResult;
+    if (!response.ok) {
+      throw new Error(`Failed to commit changes: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.commitId;
   }
 
-  async getStatus(): Promise<StatusMatrix> {
-    return git.statusMatrix({ fs, dir: this.dir });
+  async getStatus(): Promise<Array<[string, number, number, number]>> {
+    const response = await fetch(`${this.baseUrl}/git/status`);
+    if (!response.ok) {
+      throw new Error(`Failed to get status: ${response.statusText}`);
+    }
+    const data = await response.json();
+    return data.status;
   }
 
   async getHistory(filepath: string): Promise<Array<LogEntry>> {
@@ -82,25 +102,31 @@ export class GitService {
     remote: string = "origin",
     branch: string = "main"
   ): Promise<void> {
-    await git.push({
-      fs,
-      http,
-      dir: this.dir,
-      remote,
-      ref: branch,
+    const response = await fetch(`${this.baseUrl}/git/push`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ remote, branch }),
     });
+    if (!response.ok) {
+      throw new Error(`Failed to push changes: ${response.statusText}`);
+    }
   }
 
   async pull(
     remote: string = "origin",
     branch: string = "main"
   ): Promise<void> {
-    await git.pull({
-      fs,
-      http,
-      dir: this.dir,
-      remote,
-      ref: branch,
+    const response = await fetch(`${this.baseUrl}/git/pull`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ remote, branch }),
     });
+    if (!response.ok) {
+      throw new Error(`Failed to pull changes: ${response.statusText}`);
+    }
   }
 }

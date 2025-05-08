@@ -1,6 +1,4 @@
 import { useEffect, useState } from "react";
-import fs from "fs";
-import path from "path";
 import { useEditorStore } from "@/store/editorStore";
 
 interface FileNode {
@@ -12,45 +10,25 @@ interface FileNode {
 
 export function FileTree() {
   const [tree, setTree] = useState<FileNode[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const { currentFile, loadFile } = useEditorStore();
 
   useEffect(() => {
-    const buildTree = async (dir: string): Promise<FileNode[]> => {
-      const entries = await fs.promises.readdir(dir, { withFileTypes: true });
-      const nodes: FileNode[] = [];
-
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name);
-        const relativePath = path.relative(process.cwd(), fullPath);
-
-        if (entry.isDirectory()) {
-          const children = await buildTree(fullPath);
-          nodes.push({
-            name: entry.name,
-            path: relativePath,
-            isDirectory: true,
-            children,
-          });
-        } else if (entry.name.endsWith(".json")) {
-          nodes.push({
-            name: entry.name,
-            path: relativePath,
-            isDirectory: false,
-          });
+    const fetchFiles = async () => {
+      try {
+        const response = await fetch("/api/files");
+        if (!response.ok) {
+          throw new Error("Failed to fetch files");
         }
+        const data = await response.json();
+        setTree(data);
+      } catch (err) {
+        console.error("Error fetching files:", err);
+        setError(err instanceof Error ? err.message : "Unknown error");
       }
-
-      return nodes.sort((a, b) => {
-        if (a.isDirectory === b.isDirectory) {
-          return a.name.localeCompare(b.name);
-        }
-        return a.isDirectory ? -1 : 1;
-      });
     };
 
-    buildTree(path.join(process.cwd(), "content"))
-      .then(setTree)
-      .catch(console.error);
+    fetchFiles();
   }, []);
 
   const renderNode = (node: FileNode, level: number = 0) => {
@@ -77,7 +55,15 @@ export function FileTree() {
   return (
     <div className="h-full overflow-auto">
       <div className="p-4 border-b font-semibold">Content Files</div>
-      <div>{tree.map((node) => renderNode(node))}</div>
+      {error ? (
+        <div className="p-4 text-red-600">Error: {error}</div>
+      ) : tree.length === 0 ? (
+        <div className="p-4 text-gray-500">
+          No files found in content directory
+        </div>
+      ) : (
+        <div>{tree.map((node) => renderNode(node))}</div>
+      )}
     </div>
   );
 }
