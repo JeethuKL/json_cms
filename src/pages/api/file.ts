@@ -43,9 +43,9 @@ async function readJsonFile(filePath: string): Promise<string> {
   } catch (error) {
     if (error instanceof SyntaxError) {
       throw new ValidationError("Invalid JSON file", [{
-        code: "invalid_json",
-        message: error.message,
+        code: z.ZodIssueCode.custom,
         path: [],
+        message: error.message,
       }]);
     }
     throw error;

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export class ValidationError extends Error {
-  constructor(message: string, public readonly errors: z.ZodError["errors"]) {
+  constructor(message: string, public readonly errors: z.ZodIssue[]) {
     super(message);
     this.name = "ValidationError";
   }
@@ -39,9 +39,9 @@ export class ValidationService {
       }
       if (error instanceof SyntaxError) {
         throw new ValidationError("Invalid JSON", [{
-          code: "invalid_json",
-          message: error.message,
+          code: z.ZodIssueCode.custom,
           path: [],
+          message: error.message
         }]);
       }
       throw error;
