@@ -3,6 +3,26 @@ import path from "path";
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/node";
 
+type StatusMatrix = Array<[string, number, number, number]>;
+type CommitResult = {
+  oid: string;
+  commit: { message: string; tree: string; parent: string[] };
+};
+
+type LogEntry = {
+  oid: string;
+  commit: {
+    message: string;
+    tree: string;
+    parent: string[];
+    author: {
+      name: string;
+      email: string;
+      timestamp: number;
+    };
+  };
+};
+
 export class GitService {
   private dir: string;
 
@@ -36,11 +56,11 @@ export class GitService {
     return commitResult;
   }
 
-  async getStatus(): Promise<git.StatusMatrix> {
+  async getStatus(): Promise<StatusMatrix> {
     return git.statusMatrix({ fs, dir: this.dir });
   }
 
-  async getHistory(filepath: string): Promise<Array<git.CommitDescription>> {
+  async getHistory(filepath: string): Promise<Array<LogEntry>> {
     const commits = await git.log({
       fs,
       dir: this.dir,
