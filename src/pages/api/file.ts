@@ -22,10 +22,18 @@ interface ErrorResponse {
 
 import fs from "fs/promises";
 
+function ensureContentPath(filePath: string): string {
+  // Remove any existing content/ prefix and leading slashes
+  const cleanPath = filePath.replace(/^content\//, "").replace(/^\/+/, "");
+  // Ensure path is within content directory
+  return path.join('content', cleanPath);
+}
+
 async function readFile(filePath: string): Promise<string> {
   try {
     // Try to read from local content directory first (which should be part of deployment)
-    const localPath = path.join(process.cwd(), 'content', filePath);
+    const contentPath = ensureContentPath(filePath);
+    const localPath = path.join(process.cwd(), contentPath);
     const content = await fs.readFile(localPath, 'utf-8');
     return content;
   } catch (error) {
@@ -39,8 +47,11 @@ async function readFile(filePath: string): Promise<string> {
       throw new Error('File not found locally and GitHub is not configured');
     }
 
+    // Ensure consistent path handling
+    const contentPath = ensureContentPath(filePath);
+    
     const response = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,
+      `https://api.github.com/repos/${owner}/${repo}/contents/${contentPath}?ref=${branch}`,
       {
         headers: {
           Authorization: `token ${token}`,
@@ -70,9 +81,12 @@ async function writeFileToGitHub(filePath: string, content: string): Promise<voi
     throw new Error('GitHub configuration is required for writing files. Please set GITHUB_TOKEN, GITHUB_REPO, and GITHUB_OWNER in .env.local');
   }
 
+  // Ensure file is in content directory
+  const contentPath = ensureContentPath(filePath);
+
   // Get current file SHA if it exists
   const currentFileResponse = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,
+    `https://api.github.com/repos/${owner}/${repo}/contents/${contentPath}?ref=${branch}`,
     {
       headers: {
         Authorization: `token ${token}`,
@@ -88,7 +102,7 @@ async function writeFileToGitHub(filePath: string, content: string): Promise<voi
 
   // Update file in GitHub
   const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,
+    `https://api.github.com/repos/${owner}/${repo}/contents/${contentPath}`,
     {
       method: 'PUT',
       headers: {
@@ -96,7 +110,7 @@ async function writeFileToGitHub(filePath: string, content: string): Promise<voi
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        message: `Update ${filePath}`,
+        message: `Update ${contentPath}`,
         content: Buffer.from(content).toString('base64'),
         branch,
         ...(sha ? { sha } : {}),

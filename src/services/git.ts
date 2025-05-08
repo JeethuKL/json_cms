@@ -73,11 +73,18 @@ export class GitService {
     return response.json();
   }
 
+  private ensureContentPath(filePath: string): string {
+    // Remove any existing content/ prefix and leading slashes
+    const cleanPath = filePath.replace(/^content\//, "").replace(/^\/+/, "");
+    // Return path ensuring it's within content directory
+    return cleanPath;
+  }
+
   async readFile(filePath: string): Promise<string> {
     try {
-      const cleanPath = filePath.replace(/^content\//, "");
+      const contentPath = this.ensureContentPath(filePath);
       const data = await this.handleRequest<{ content: string }>(
-        `/file?path=${encodeURIComponent(cleanPath)}`
+        `/file?path=${encodeURIComponent(contentPath)}`
       );
       return data.content;
     } catch (error) {
@@ -90,10 +97,10 @@ export class GitService {
 
   async saveFile(filePath: string, content: string): Promise<void> {
     try {
-      const cleanPath = filePath.replace(/^content\//, "");
+      const contentPath = this.ensureContentPath(filePath);
       await this.handleRequest("/file", {
         method: "POST",
-        body: JSON.stringify({ path: cleanPath, content }),
+        body: JSON.stringify({ path: contentPath, content }),
       });
     } catch (error) {
       throw new GitError(
