@@ -38,7 +38,7 @@ async function getGitHubApi() {
   const branch = process.env.GITHUB_BRANCH || 'main';
 
   if (!token || !repo || !owner) {
-    throw new Error('GitHub configuration is missing');
+    throw new Error('GitHub configuration is missing. Please set GITHUB_TOKEN, GITHUB_REPO, and GITHUB_OWNER in .env.local');
   }
 
   const baseUrl = `https://api.github.com/repos/${owner}/${repo}`;
@@ -170,35 +170,70 @@ export default async function handler(
         if (req.method !== "GET") {
           return res.status(405).json({ error: "Method not allowed" });
         }
-        // For now, return empty status as we're handling everything through direct GitHub API
-        return res.status(200).json({ status: [] });
+
+        // Since we're now using local files, GitHub integration is optional
+        // Return a status indicating GitHub configuration state
+        return res.status(200).json({ 
+          status: [],
+          github: {
+            configured: true,
+            repo: process.env.GITHUB_REPO,
+            owner: process.env.GITHUB_OWNER,
+            branch
+          }
+        });
 
       case "branch":
         if (req.method === "GET") {
-          return res.status(200).json({ branch });
+          // When GitHub isn't configured, return the default branch
+          const defaultBranch = "main";
+          return res.status(200).json({ 
+            branch: branch || defaultBranch,
+            github: {
+              configured: true,
+              repo: process.env.GITHUB_REPO,
+              owner: process.env.GITHUB_OWNER
+            }
+          });
         }
         return res.status(405).json({ error: "Method not allowed" });
 
       default:
         return res.status(400).json({ error: "Invalid action" });
     }
-  } catch (error) {
-    console.error(`Error in Git operation (${action}):`, error);
-    if (error instanceof Error) {
-      if (error.message.includes('authentication') || error.message.includes('401')) {
-        return res.status(401).json({
-          message: "GitHub authentication failed. Please check your GITHUB_TOKEN.",
-          code: "AUTH_ERROR",
+    } catch (error) {
+      console.error(`Error in Git operation (${action}):`, error);
+      
+      // Special handling for missing GitHub configuration
+      if (error instanceof Error && error.message.includes('GitHub configuration is missing')) {
+        if (action === "status" || action === "branch") {
+          // For status and branch endpoints, return success response with GitHub unconfigured state
+          return res.status(200).json({
+            status: [],
+            github: {
+              configured: false,
+              message: "GitHub integration is not configured. Set GITHUB_TOKEN, GITHUB_REPO, and GITHUB_OWNER in .env.local to enable GitHub features."
+            }
+          });
+        }
+      }
+
+      // Handle other errors
+      if (error instanceof Error) {
+        if (error.message.includes('authentication') || error.message.includes('401')) {
+          return res.status(401).json({
+            message: "GitHub authentication failed. Please check your GITHUB_TOKEN.",
+            code: "AUTH_ERROR",
+          });
+        }
+        return res.status(500).json({
+          message: error.message,
+          code: "GIT_ERROR",
         });
       }
       return res.status(500).json({
-        message: error.message,
-        code: "GIT_ERROR",
+        message: "Unknown error occurred",
+        code: "UNKNOWN_ERROR",
       });
-    }
-    return res.status(500).json({
-      message: "Unknown error occurred",
-      code: "UNKNOWN_ERROR",
-    });
   }
 }
