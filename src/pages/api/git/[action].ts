@@ -17,10 +17,6 @@ const GitOperationSchema = z.object({
   branch: z.string().default("main"),
 });
 
-const FileOperationSchema = z.object({
-  path: z.string().min(1),
-});
-
 const RevertOperationSchema = z.object({
   path: z.string().min(1),
   ref: z.string().optional(),
@@ -55,7 +51,6 @@ async function getGitConfig() {
       }
     }
 
-    // Fall back to default values if still not found
     return {
       name: config.name || "JSON CMS",
       email: config.email || "json-cms@example.com",
@@ -69,39 +64,59 @@ async function getGitConfig() {
   }
 }
 
+async function getGitCredentials() {
+  try {
+    // Try to get credentials from git config
+    const username = await git.getConfig({ fs, dir, path: "credential.username" });
+    const token = await git.getConfig({ fs, dir, path: "credential.helper" });
+
+    if (username && token) {
+      return { username, password: token };
+    }
+
+    // Check for GIT_TOKEN environment variable
+    if (process.env.GIT_TOKEN) {
+      return {
+        username: process.env.GIT_USERNAME || "git",
+        password: process.env.GIT_TOKEN,
+      };
+    }
+
+    // Check for SSH key
+    const sshDir = path.join(process.env.HOME || process.env.USERPROFILE || "", ".ssh");
+    if (fs.existsSync(path.join(sshDir, "id_rsa"))) {
+      return { useSSH: true };
+    }
+
+    return null;
+  } catch (error) {
+    console.warn("Failed to get git credentials:", error);
+    return null;
+  }
+}
+
 // Error handling
 function handleGitError(error: unknown) {
   console.error("Git operation failed:", error);
   if (error instanceof Error) {
-    const gitError = error as any; // isomorphic-git errors have additional properties
+    const gitError = error as any;
     
-    // Handle missing configuration
-    if (gitError.code === 'MissingNameError') {
-      return {
-        message: "Git username not configured. Please run: git config --global user.name 'Your Name'",
-        code: "CONFIG_ERROR",
-      };
-    }
-    if (gitError.code === 'MissingEmailError') {
-      return {
-        message: "Git email not configured. Please run: git config --global user.email 'your@email.com'",
-        code: "CONFIG_ERROR",
-      };
-    }
-    
-    // Handle authentication errors
     if (gitError.code === 'HttpError' && gitError.data?.statusCode === 401) {
       return {
-        message: "Git authentication failed. Please ensure you have the correct credentials configured.",
+        message: "Git authentication failed. Please configure Git credentials using one of these methods:\n" +
+                "1. Set GIT_TOKEN environment variable\n" +
+                "2. Configure SSH key\n" +
+                "3. Use git config to store credentials",
         code: "AUTH_ERROR",
       };
     }
 
-    // Handle other common git errors
-    if (gitError.code === 'CheckoutConflictError') {
+    if (gitError.code === 'MissingNameError' || gitError.code === 'MissingEmailError') {
       return {
-        message: "Git checkout conflict. Please resolve conflicts and try again.",
-        code: "CONFLICT_ERROR",
+        message: "Git user not configured. Please run:\n" +
+                "git config --global user.name 'Your Name'\n" +
+                "git config --global user.email 'your@email.com'",
+        code: "CONFIG_ERROR",
       };
     }
 
@@ -124,6 +139,7 @@ export default async function handler(
 
   try {
     const config = await getGitConfig();
+    const credentials = await getGitCredentials();
 
     switch (action) {
       case "commit":
@@ -144,20 +160,12 @@ export default async function handler(
         });
         return res.status(200).json({ commitId: commitResult });
 
-      case "status":
-        if (req.method !== "GET") {
-          return res.status(405).json({ error: "Method not allowed" });
-        }
-        const status = await git.statusMatrix({ fs, dir });
-        return res.status(200).json({ status });
-
       case "push":
         if (req.method !== "POST") {
           return res.status(405).json({ error: "Method not allowed" });
         }
         const pushData = GitOperationSchema.parse(req.body);
         
-        // Use local git credentials
         const url = await git.getConfig({ fs, dir, path: `remote.${pushData.remote}.url` });
         if (!url) {
           throw new Error(`Remote ${pushData.remote} not found`);
@@ -169,7 +177,7 @@ export default async function handler(
           dir,
           remote: pushData.remote,
           ref: pushData.branch,
-          onAuth: () => ({ cancel: false }), // Use local git credentials
+          onAuth: () => credentials || { cancel: true },
         });
         return res.status(200).json({ success: true });
 
@@ -185,7 +193,7 @@ export default async function handler(
           dir,
           remote: pullData.remote,
           ref: pullData.branch,
-          onAuth: () => ({ cancel: false }), // Use local git credentials
+          onAuth: () => credentials || { cancel: true },
           author: {
             name: config.name,
             email: config.email,
@@ -193,34 +201,12 @@ export default async function handler(
         });
         return res.status(200).json({ success: true });
 
-      case "history":
+      case "status":
         if (req.method !== "GET") {
           return res.status(405).json({ error: "Method not allowed" });
         }
-        const { path: filePath } = req.query;
-        if (!filePath || typeof filePath !== "string") {
-          return res.status(400).json({ error: "Path parameter is required" });
-        }
-        const history = await git.log({
-          fs,
-          dir,
-          filepath: filePath,
-        });
-        return res.status(200).json({ history });
-
-      case "revert":
-        if (req.method !== "POST") {
-          return res.status(405).json({ error: "Method not allowed" });
-        }
-        const revertData = RevertOperationSchema.parse(req.body);
-        await git.checkout({
-          fs,
-          dir,
-          ref: revertData.ref || "HEAD",
-          force: true,
-          filepaths: [revertData.path],
-        });
-        return res.status(200).json({ success: true });
+        const status = await git.statusMatrix({ fs, dir });
+        return res.status(200).json({ status });
 
       case "branch":
         if (req.method === "GET") {
