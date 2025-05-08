@@ -1,9 +1,43 @@
 import React, { useState } from "react";
 import { useEditorStore } from "@/store/editorStore";
+import classNames from "classnames";
 
-interface GitStatus {
-  isLoading: boolean;
-  message: string | null;
+interface ToolbarButtonProps {
+  onClick: () => void;
+  disabled?: boolean;
+  isLoading?: boolean;
+  variant?: "primary" | "secondary" | "danger" | "success";
+  children: React.ReactNode;
+}
+
+function ToolbarButton({
+  onClick,
+  disabled,
+  isLoading,
+  variant = "primary",
+  children,
+}: ToolbarButtonProps) {
+  const baseClasses = "px-4 py-2 rounded-md transition-colors";
+  const variantClasses = {
+    primary: "bg-blue-500 text-white hover:bg-blue-600",
+    secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200",
+    danger: "bg-red-500 text-white hover:bg-red-600",
+    success: "bg-green-500 text-white hover:bg-green-600",
+  };
+  const disabledClasses = "bg-gray-200 text-gray-500 cursor-not-allowed hover:bg-gray-200";
+
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled || isLoading}
+      className={classNames(
+        baseClasses,
+        disabled || isLoading ? disabledClasses : variantClasses[variant]
+      )}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function EditorToolbar() {
@@ -11,47 +45,27 @@ export function EditorToolbar() {
     currentFile,
     hasChanges,
     isLoading,
-    gitService,
+    error,
     saveChanges,
+    commitAndPush,
     discardChanges,
+    pullChanges,
   } = useEditorStore();
 
-  const [gitStatus, setGitStatus] = useState<GitStatus>({
-    isLoading: false,
-    message: null,
-  });
+  const [gitMessage, setGitMessage] = useState<string | null>(null);
 
-  const handleSave = async () => {
-    if (!currentFile || !hasChanges) return;
-    await saveChanges();
-  };
-
-  const handlePush = async () => {
-    try {
-      setGitStatus({ isLoading: true, message: "Pushing changes..." });
-      await gitService.push();
-      setGitStatus({ isLoading: false, message: "Changes pushed successfully" });
-      setTimeout(() => setGitStatus({ isLoading: false, message: null }), 3000);
-    } catch (error) {
-      setGitStatus({
-        isLoading: false,
-        message: `Push failed: ${(error as Error).message}`,
-      });
-    }
+  const handleCommitAndPush = async () => {
+    setGitMessage("Committing and pushing changes...");
+    await commitAndPush();
+    setGitMessage("Changes pushed successfully");
+    setTimeout(() => setGitMessage(null), 3000);
   };
 
   const handlePull = async () => {
-    try {
-      setGitStatus({ isLoading: true, message: "Pulling changes..." });
-      await gitService.pull();
-      setGitStatus({ isLoading: false, message: "Changes pulled successfully" });
-      setTimeout(() => setGitStatus({ isLoading: false, message: null }), 3000);
-    } catch (error) {
-      setGitStatus({
-        isLoading: false,
-        message: `Pull failed: ${(error as Error).message}`,
-      });
-    }
+    setGitMessage("Pulling changes...");
+    await pullChanges();
+    setGitMessage("Changes pulled successfully");
+    setTimeout(() => setGitMessage(null), 3000);
   };
 
   const handleDiscard = () => {
@@ -64,71 +78,52 @@ export function EditorToolbar() {
   return (
     <div className="flex items-center justify-between p-4 border-b bg-white">
       <div className="flex items-center space-x-4">
-        <button
-          onClick={handleSave}
-          disabled={!currentFile || !hasChanges || isLoading}
-          className={`px-4 py-2 rounded-md transition-colors ${
-            !currentFile || !hasChanges || isLoading
-              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-              : "bg-blue-500 text-white hover:bg-blue-600"
-          }`}
+        <ToolbarButton
+          onClick={() => saveChanges()}
+          disabled={!currentFile || !hasChanges}
+          isLoading={isLoading}
+          variant="primary"
         >
           {isLoading ? "Saving..." : "Save"}
-        </button>
+        </ToolbarButton>
 
-        <button
+        <ToolbarButton
           onClick={handleDiscard}
-          disabled={!currentFile || !hasChanges || isLoading}
-          className={`px-4 py-2 rounded-md transition-colors ${
-            !currentFile || !hasChanges || isLoading
-              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-              : "bg-red-500 text-white hover:bg-red-600"
-          }`}
+          disabled={!currentFile || !hasChanges}
+          variant="danger"
         >
           Discard
-        </button>
+        </ToolbarButton>
       </div>
 
       <div className="flex items-center space-x-4">
-        {gitStatus.message && (
-          <span
-            className={`text-sm ${
-              gitStatus.message.includes("failed")
-                ? "text-red-500"
-                : "text-green-500"
-            }`}
-          >
-            {gitStatus.message}
+        {error && (
+          <span className="text-sm text-red-500">
+            {error}
+          </span>
+        )}
+        
+        {gitMessage && !error && (
+          <span className="text-sm text-green-500">
+            {gitMessage}
           </span>
         )}
 
-        <button
+        <ToolbarButton
           onClick={handlePull}
-          disabled={gitStatus.isLoading}
-          className={`px-4 py-2 rounded-md transition-colors ${
-            gitStatus.isLoading
-              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-          }`}
+          disabled={isLoading}
+          variant="secondary"
         >
-          {gitStatus.isLoading && gitStatus.message?.includes("Pulling")
-            ? "Pulling..."
-            : "Pull"}
-        </button>
+          Pull Changes
+        </ToolbarButton>
 
-        <button
-          onClick={handlePush}
-          disabled={gitStatus.isLoading}
-          className={`px-4 py-2 rounded-md transition-colors ${
-            gitStatus.isLoading
-              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
-              : "bg-green-500 text-white hover:bg-green-600"
-          }`}
+        <ToolbarButton
+          onClick={handleCommitAndPush}
+          disabled={isLoading || !hasChanges}
+          variant="success"
         >
-          {gitStatus.isLoading && gitStatus.message?.includes("Pushing")
-            ? "Pushing..."
-            : "Push"}
-        </button>
+          Commit & Push
+        </ToolbarButton>
       </div>
 
       {currentFile && (

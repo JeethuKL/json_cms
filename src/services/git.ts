@@ -43,6 +43,7 @@ export class GitService {
 
   constructor(config?: Partial<GitConfig>) {
     this.baseUrl = "/api";
+    // Default config will be overridden by local git config
     this.config = GitConfigSchema.parse({
       name: "JSON CMS",
       email: "json-cms@example.com",
@@ -66,7 +67,7 @@ export class GitService {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: "Unknown error" }));
-      throw new GitError(error.message || response.statusText, response.status.toString());
+      throw new GitError(error.message || response.statusText, error.code || response.status.toString());
     }
 
     return response.json();
@@ -139,8 +140,15 @@ export class GitService {
         }),
       });
     } catch (error) {
+      const err = error as GitError;
+      if (err.code === "AUTH_ERROR") {
+        throw new GitError(
+          "Git authentication failed. Please ensure you have configured Git credentials.",
+          "AUTH_ERROR"
+        );
+      }
       throw new GitError(
-        `Failed to push changes: ${(error as Error).message}`,
+        `Failed to push changes: ${err.message}`,
         "PUSH_ERROR"
       );
     }
@@ -156,8 +164,15 @@ export class GitService {
         }),
       });
     } catch (error) {
+      const err = error as GitError;
+      if (err.code === "AUTH_ERROR") {
+        throw new GitError(
+          "Git authentication failed. Please ensure you have configured Git credentials.",
+          "AUTH_ERROR"
+        );
+      }
       throw new GitError(
-        `Failed to pull changes: ${(error as Error).message}`,
+        `Failed to pull changes: ${err.message}`,
         "PULL_ERROR"
       );
     }

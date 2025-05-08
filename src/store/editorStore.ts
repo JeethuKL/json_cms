@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import { GitService } from "@/services/git";
+import { GitService, GitError } from "@/services/git";
+import { ValidationError } from "@/services/validation";
 
 interface EditorState {
   currentFile: string | null;
@@ -13,8 +14,10 @@ interface EditorState {
   setCurrentFile: (file: string | null) => void;
   setContent: (content: string) => void;
   saveChanges: () => Promise<void>;
+  commitAndPush: () => Promise<void>;
   discardChanges: () => void;
   loadFile: (path: string) => Promise<void>;
+  pullChanges: () => Promise<void>;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -31,6 +34,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((state) => ({
       content,
       hasChanges: content !== state.content,
+      error: null,
     })),
 
   saveChanges: async () => {
@@ -41,10 +45,50 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
     try {
       await gitService.saveFile(currentFile, content);
-      await gitService.commitChanges(`Update ${currentFile}`);
       set({ hasChanges: false });
     } catch (error) {
-      set({ error: (error as Error).message });
+      if (error instanceof ValidationError) {
+        set({
+          error: `Validation error: ${error.errors.map(e => e.message).join(", ")}`
+        });
+      } else {
+        set({
+          error: `Failed to save: ${(error as Error).message}`
+        });
+      }
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  commitAndPush: async () => {
+    const { currentFile, gitService } = get();
+    if (!currentFile) return;
+
+    set({ isLoading: true, error: null });
+
+    try {
+      // First commit the changes
+      await gitService.commitChanges(`Update ${currentFile}`);
+
+      // Then try to push
+      await gitService.push();
+    } catch (error) {
+      if (error instanceof GitError) {
+        if (error.code === "AUTH_ERROR") {
+          set({
+            error: "Git authentication failed. Please configure your Git credentials."
+          });
+        } else {
+          set({
+            error: `Git operation failed: ${error.message}`
+          });
+        }
+      } else {
+        set({
+          error: `Operation failed: ${(error as Error).message}`
+        });
+      }
     } finally {
       set({ isLoading: false });
     }
@@ -68,7 +112,47 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         hasChanges: false,
       });
     } catch (error) {
-      set({ error: (error as Error).message });
+      set({
+        error: `Failed to load file: ${(error as Error).message}`,
+        content: "",
+        hasChanges: false,
+      });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  pullChanges: async () => {
+    set({ isLoading: true, error: null });
+
+    try {
+      await get().gitService.pull();
+      
+      // Reload current file if any
+      const { currentFile } = get();
+      if (currentFile) {
+        const content = await get().gitService.readFile(currentFile);
+        set({
+          content,
+          hasChanges: false,
+        });
+      }
+    } catch (error) {
+      if (error instanceof GitError) {
+        if (error.code === "AUTH_ERROR") {
+          set({
+            error: "Git authentication failed. Please configure your Git credentials."
+          });
+        } else {
+          set({
+            error: `Git operation failed: ${error.message}`
+          });
+        }
+      } else {
+        set({
+          error: `Pull failed: ${(error as Error).message}`
+        });
+      }
     } finally {
       set({ isLoading: false });
     }

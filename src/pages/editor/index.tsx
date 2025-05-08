@@ -18,19 +18,7 @@ export default function EditorPage() {
     hasChanges,
     error,
     setContent,
-    saveChanges,
   } = useEditorStore();
-
-  useEffect(() => {
-    // Auto-save changes after 1 second of inactivity
-    if (hasChanges) {
-      const timer = setTimeout(() => {
-        saveChanges();
-      }, 1000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [hasChanges, saveChanges]);
 
   return (
     <div className="flex bg-gray-100 h-screen">
