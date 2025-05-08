@@ -23,20 +23,20 @@ interface ErrorResponse {
 import fs from "fs/promises";
 
 async function readFile(filePath: string): Promise<string> {
-  // First try to read from local content directory
   try {
+    // Try to read from local content directory first (which should be part of deployment)
     const localPath = path.join(process.cwd(), 'content', filePath);
     const content = await fs.readFile(localPath, 'utf-8');
     return content;
   } catch (error) {
-    // If local file doesn't exist and GitHub is configured, try GitHub
+    // If local file doesn't exist, try GitHub if configured
     const token = process.env.GITHUB_TOKEN;
     const repo = process.env.GITHUB_REPO;
     const owner = process.env.GITHUB_OWNER;
     const branch = process.env.GITHUB_BRANCH || 'main';
 
     if (!token || !repo || !owner) {
-      throw new Error('File not found and GitHub is not configured');
+      throw new Error('File not found locally and GitHub is not configured');
     }
 
     const response = await fetch(
@@ -60,65 +60,52 @@ async function readFile(filePath: string): Promise<string> {
   }
 }
 
-async function writeFile(filePath: string, content: string): Promise<void> {
-  // First try to write to local content directory
-  try {
-    const localPath = path.join(process.cwd(), 'content', filePath);
-    
-    // Ensure the directory exists
-    await fs.mkdir(path.dirname(localPath), { recursive: true });
-    
-    // Write the file locally
-    await fs.writeFile(localPath, content, 'utf-8');
+async function writeFileToGitHub(filePath: string, content: string): Promise<void> {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPO;
+  const owner = process.env.GITHUB_OWNER;
+  const branch = process.env.GITHUB_BRANCH || 'main';
 
-    // If GitHub is configured, also write to GitHub
-    const token = process.env.GITHUB_TOKEN;
-    const repo = process.env.GITHUB_REPO;
-    const owner = process.env.GITHUB_OWNER;
-    const branch = process.env.GITHUB_BRANCH || 'main';
+  if (!token || !repo || !owner) {
+    throw new Error('GitHub configuration is required for writing files. Please set GITHUB_TOKEN, GITHUB_REPO, and GITHUB_OWNER in .env.local');
+  }
 
-    if (token && repo && owner) {
-      // Get current file SHA if it exists
-      const currentFileResponse = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,
-        {
-          headers: {
-            Authorization: `token ${token}`,
-          },
-        }
-      );
-
-      let sha: string | undefined;
-      if (currentFileResponse.ok) {
-        const currentFile = await currentFileResponse.json();
-        sha = currentFile.sha;
-      }
-
-      // Update file in GitHub
-      const response = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,
-        {
-          method: 'PUT',
-          headers: {
-            Authorization: `token ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            message: `Update ${filePath}`,
-            content: Buffer.from(content).toString('base64'),
-            branch,
-            ...(sha ? { sha } : {}),
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        console.warn(`GitHub API error: ${response.statusText}`);
-        // Don't throw error since local write succeeded
-      }
+  // Get current file SHA if it exists
+  const currentFileResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,
+    {
+      headers: {
+        Authorization: `token ${token}`,
+      },
     }
-  } catch (error) {
-    throw new Error(`Failed to write file: ${(error as Error).message}`);
+  );
+
+  let sha: string | undefined;
+  if (currentFileResponse.ok) {
+    const currentFile = await currentFileResponse.json();
+    sha = currentFile.sha;
+  }
+
+  // Update file in GitHub
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: `Update ${filePath}`,
+        content: Buffer.from(content).toString('base64'),
+        branch,
+        ...(sha ? { sha } : {}),
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub API error: ${response.statusText}`);
   }
 }
 
@@ -144,7 +131,7 @@ export default async function handler(
       // Validate JSON before saving
       await validationService.validateJson(body.path, body.content);
       
-      await writeFile(body.path, body.content);
+      await writeFileToGitHub(body.path, body.content);
       return res.status(200).json({ content: body.content });
 
     } else {
