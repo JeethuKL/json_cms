@@ -1,5 +1,4 @@
 import { NextApiRequest, NextApiResponse } from "next";
-import fs from "fs";
 import path from "path";
 import { z } from "zod";
 import { ValidationService, ValidationError } from "@/services/validation";
@@ -21,53 +20,81 @@ interface ErrorResponse {
   details?: unknown;
 }
 
-// Helper Functions
-function getFullPath(relativePath: string): string {
-  const contentDir = path.join(process.cwd(), "content");
-  return path.join(contentDir, relativePath);
-}
+async function readFromGitHub(filePath: string): Promise<string> {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPO;
+  const owner = process.env.GITHUB_OWNER;
+  const branch = process.env.GITHUB_BRANCH || 'main';
 
-function ensureContentDirectory(): void {
-  const contentDir = path.join(process.cwd(), "content");
-  if (!fs.existsSync(contentDir)) {
-    fs.mkdirSync(contentDir, { recursive: true });
+  if (!token || !repo || !owner) {
+    throw new Error('GitHub configuration is missing');
   }
-}
 
-async function readJsonFile(filePath: string): Promise<string> {
-  try {
-    const content = await fs.promises.readFile(filePath, "utf-8");
-    // Validate JSON syntax by trying to parse it
-    JSON.parse(content);
-    return content;
-  } catch (error) {
-    if (error instanceof SyntaxError) {
-      throw new ValidationError("Invalid JSON file", [{
-        code: z.ZodIssueCode.custom,
-        path: [],
-        message: error.message,
-      }]);
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,
+    {
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: 'application/vnd.github.v3.raw',
+      },
     }
-    throw error;
+  );
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error('File not found');
+    }
+    throw new Error(`GitHub API error: ${response.statusText}`);
   }
+
+  return response.text();
 }
 
-async function writeJsonFile(filePath: string, content: string): Promise<void> {
-  try {
-    // Validate JSON syntax and schema
-    await validationService.validateJson(filePath, content);
-    
-    // Ensure the directory exists
-    const dir = path.dirname(filePath);
-    await fs.promises.mkdir(dir, { recursive: true });
+async function writeToGitHub(filePath: string, content: string): Promise<void> {
+  const token = process.env.GITHUB_TOKEN;
+  const repo = process.env.GITHUB_REPO;
+  const owner = process.env.GITHUB_OWNER;
+  const branch = process.env.GITHUB_BRANCH || 'main';
 
-    // Write the file
-    await fs.promises.writeFile(filePath, content, "utf-8");
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      throw error;
+  if (!token || !repo || !owner) {
+    throw new Error('GitHub configuration is missing');
+  }
+
+  // First, try to get the current file to get its SHA
+  const currentFileResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}?ref=${branch}`,
+    {
+      headers: {
+        Authorization: `token ${token}`,
+      },
     }
-    throw new Error(`Failed to write file: ${(error as Error).message}`);
+  );
+
+  let sha: string | undefined;
+  if (currentFileResponse.ok) {
+    const currentFile = await currentFileResponse.json();
+    sha = currentFile.sha;
+  }
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `token ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message: `Update ${filePath}`,
+        content: Buffer.from(content).toString('base64'),
+        branch,
+        ...(sha ? { sha } : {}),
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error(`GitHub API error: ${response.statusText}`);
   }
 }
 
@@ -79,22 +106,21 @@ export default async function handler(
     if (req.method === "GET") {
       // Read file
       const query = ReadFileQuerySchema.parse(req.query);
-      const fullPath = getFullPath(query.path);
-
-      if (!fs.existsSync(fullPath)) {
-        return res.status(404).json({ error: "File not found" });
-      }
-
-      const content = await readJsonFile(fullPath);
+      const content = await readFromGitHub(query.path);
+      
+      // Validate JSON syntax by trying to parse it
+      JSON.parse(content);
+      
       return res.status(200).json({ content });
 
     } else if (req.method === "POST") {
       // Write file
       const body = WriteFileBodySchema.parse(req.body);
-      const fullPath = getFullPath(body.path);
-
-      ensureContentDirectory();
-      await writeJsonFile(fullPath, body.content);
+      
+      // Validate JSON before saving
+      await validationService.validateJson(body.path, body.content);
+      
+      await writeToGitHub(body.path, body.content);
       return res.status(200).json({ content: body.content });
 
     } else {
