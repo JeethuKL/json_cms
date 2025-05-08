@@ -1,86 +1,141 @@
+import React, { useState } from "react";
 import { useEditorStore } from "@/store/editorStore";
+
+interface GitStatus {
+  isLoading: boolean;
+  message: string | null;
+}
 
 export function EditorToolbar() {
   const {
     currentFile,
     hasChanges,
     isLoading,
+    gitService,
     saveChanges,
     discardChanges,
-    gitService,
   } = useEditorStore();
+
+  const [gitStatus, setGitStatus] = useState<GitStatus>({
+    isLoading: false,
+    message: null,
+  });
+
+  const handleSave = async () => {
+    if (!currentFile || !hasChanges) return;
+    await saveChanges();
+  };
 
   const handlePush = async () => {
     try {
+      setGitStatus({ isLoading: true, message: "Pushing changes..." });
       await gitService.push();
+      setGitStatus({ isLoading: false, message: "Changes pushed successfully" });
+      setTimeout(() => setGitStatus({ isLoading: false, message: null }), 3000);
     } catch (error) {
-      console.error("Failed to push changes:", error);
+      setGitStatus({
+        isLoading: false,
+        message: `Push failed: ${(error as Error).message}`,
+      });
     }
   };
 
   const handlePull = async () => {
     try {
+      setGitStatus({ isLoading: true, message: "Pulling changes..." });
       await gitService.pull();
+      setGitStatus({ isLoading: false, message: "Changes pulled successfully" });
+      setTimeout(() => setGitStatus({ isLoading: false, message: null }), 3000);
     } catch (error) {
-      console.error("Failed to pull changes:", error);
+      setGitStatus({
+        isLoading: false,
+        message: `Pull failed: ${(error as Error).message}`,
+      });
+    }
+  };
+
+  const handleDiscard = () => {
+    if (!currentFile || !hasChanges) return;
+    if (window.confirm("Are you sure you want to discard your changes?")) {
+      discardChanges();
     }
   };
 
   return (
-    <div className="flex justify-between items-center bg-white px-4 py-2 border-b">
-      <div className="flex items-center space-x-2">
+    <div className="flex items-center justify-between p-4 border-b bg-white">
+      <div className="flex items-center space-x-4">
         <button
-          className={`
-            px-3 py-1 rounded
-            ${
-              hasChanges
-                ? "bg-blue-500 text-white hover:bg-blue-600"
-                : "bg-gray-100 text-gray-400"
-            }
-          `}
-          onClick={() => saveChanges()}
-          disabled={!hasChanges || isLoading}
+          onClick={handleSave}
+          disabled={!currentFile || !hasChanges || isLoading}
+          className={`px-4 py-2 rounded-md transition-colors ${
+            !currentFile || !hasChanges || isLoading
+              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+              : "bg-blue-500 text-white hover:bg-blue-600"
+          }`}
         >
-          Save
+          {isLoading ? "Saving..." : "Save"}
         </button>
 
         <button
-          className={`
-            px-3 py-1 rounded
-            ${
-              hasChanges
-                ? "bg-red-100 text-red-600 hover:bg-red-200"
-                : "bg-gray-100 text-gray-400"
-            }
-          `}
-          onClick={() => discardChanges()}
-          disabled={!hasChanges || isLoading}
+          onClick={handleDiscard}
+          disabled={!currentFile || !hasChanges || isLoading}
+          className={`px-4 py-2 rounded-md transition-colors ${
+            !currentFile || !hasChanges || isLoading
+              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+              : "bg-red-500 text-white hover:bg-red-600"
+          }`}
         >
           Discard
         </button>
       </div>
 
-      <div className="flex-1 mx-4 text-gray-500 truncate">
-        {currentFile || "No file selected"}
-      </div>
+      <div className="flex items-center space-x-4">
+        {gitStatus.message && (
+          <span
+            className={`text-sm ${
+              gitStatus.message.includes("failed")
+                ? "text-red-500"
+                : "text-green-500"
+            }`}
+          >
+            {gitStatus.message}
+          </span>
+        )}
 
-      <div className="flex items-center space-x-2">
         <button
-          className="bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
           onClick={handlePull}
-          disabled={isLoading}
+          disabled={gitStatus.isLoading}
+          className={`px-4 py-2 rounded-md transition-colors ${
+            gitStatus.isLoading
+              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+          }`}
         >
-          Pull
+          {gitStatus.isLoading && gitStatus.message?.includes("Pulling")
+            ? "Pulling..."
+            : "Pull"}
         </button>
 
         <button
-          className="bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded"
           onClick={handlePush}
-          disabled={isLoading}
+          disabled={gitStatus.isLoading}
+          className={`px-4 py-2 rounded-md transition-colors ${
+            gitStatus.isLoading
+              ? "bg-gray-200 text-gray-500 cursor-not-allowed"
+              : "bg-green-500 text-white hover:bg-green-600"
+          }`}
         >
-          Push
+          {gitStatus.isLoading && gitStatus.message?.includes("Pushing")
+            ? "Pushing..."
+            : "Push"}
         </button>
       </div>
+
+      {currentFile && (
+        <div className="ml-4 text-sm text-gray-500">
+          Current file: {currentFile}
+        </div>
+      )}
     </div>
   );
 }

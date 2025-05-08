@@ -1,7 +1,7 @@
 {
   "name": "json-cms",
   "version": "0.1.0",
-  "description": "Git-based JSON CMS for Next.js projects",
+  "description": "Git-based JSON CMS for Next.js projects with real-time preview",
   "main": "dist/index.js",
   "bin": {
     "json-cms": "./dist/cli/index.js"
@@ -12,38 +12,65 @@
     "start": "next start",
     "lint": "next lint",
     "build:cli": "tsc -p tsconfig.cli.json",
-    "prepare": "npm run build:cli"
+    "prepare": "npm run build:cli",
+    "test": "jest",
+    "format": "prettier --write .",
+    "validate": "tsc --noEmit",
+    "clean": "rimraf .next dist"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
     "@types/node": "^20.11.19",
     "@types/react": "^18.2.57",
     "@types/react-dom": "^18.2.19",
+    "classnames": "^2.5.1",
     "commander": "^12.0.0",
     "isomorphic-git": "^1.25.3",
+    "lodash": "^4.17.21",
     "next": "^15.3.2",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-json-view": "^1.21.3",
+    "simple-git": "^3.22.0",
     "typescript": "^5.3.3",
+    "zod": "^3.24.4",
     "zustand": "^4.5.1"
   },
   "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/lodash": "^4.14.202",
     "@typescript-eslint/eslint-plugin": "^7.0.2",
     "@typescript-eslint/parser": "^7.0.2",
     "autoprefixer": "^10.4.14",
     "eslint": "^8.56.0",
     "eslint-config-next": "^14.1.0",
+    "eslint-config-prettier": "^9.1.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
     "postcss": "^8.4.31",
     "prettier": "^3.2.5",
-    "tailwindcss": "^3.3.0"
+    "rimraf": "^5.0.5",
+    "tailwindcss": "^3.3.0",
+    "ts-jest": "^29.1.2"
   },
   "keywords": [
     "cms",
     "json",
     "git",
     "nextjs",
-    "editor"
+    "editor",
+    "real-time-preview"
   ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/json-cms.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/json-cms/issues"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
 }

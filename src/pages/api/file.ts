@@ -1,65 +1,125 @@
 import { NextApiRequest, NextApiResponse } from "next";
 import fs from "fs";
 import path from "path";
+import { z } from "zod";
+import { ValidationService, ValidationError } from "@/services/validation";
+
+const validationService = new ValidationService();
+
+// Request validation schemas
+const ReadFileQuerySchema = z.object({
+  path: z.string().min(1),
+});
+
+const WriteFileBodySchema = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+});
+
+interface ErrorResponse {
+  error: string;
+  details?: unknown;
+}
+
+// Helper Functions
+function getFullPath(relativePath: string): string {
+  const contentDir = path.join(process.cwd(), "content");
+  return path.join(contentDir, relativePath);
+}
+
+function ensureContentDirectory(): void {
+  const contentDir = path.join(process.cwd(), "content");
+  if (!fs.existsSync(contentDir)) {
+    fs.mkdirSync(contentDir, { recursive: true });
+  }
+}
+
+async function readJsonFile(filePath: string): Promise<string> {
+  try {
+    const content = await fs.promises.readFile(filePath, "utf-8");
+    // Validate JSON syntax by trying to parse it
+    JSON.parse(content);
+    return content;
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      throw new ValidationError("Invalid JSON file", [{
+        code: "invalid_json",
+        message: error.message,
+        path: [],
+      }]);
+    }
+    throw error;
+  }
+}
+
+async function writeJsonFile(filePath: string, content: string): Promise<void> {
+  try {
+    // Validate JSON syntax and schema
+    await validationService.validateJson(filePath, content);
+    
+    // Ensure the directory exists
+    const dir = path.dirname(filePath);
+    await fs.promises.mkdir(dir, { recursive: true });
+
+    // Write the file
+    await fs.promises.writeFile(filePath, content, "utf-8");
+  } catch (error) {
+    if (error instanceof ValidationError) {
+      throw error;
+    }
+    throw new Error(`Failed to write file: ${(error as Error).message}`);
+  }
+}
 
 export default async function handler(
   req: NextApiRequest,
-  res: NextApiResponse
+  res: NextApiResponse<{ content: string } | ErrorResponse>
 ) {
-  const contentDir = path.join(process.cwd(), "content");
+  try {
+    if (req.method === "GET") {
+      // Read file
+      const query = ReadFileQuerySchema.parse(req.query);
+      const fullPath = getFullPath(query.path);
 
-  if (req.method === "GET") {
-    try {
-      const filePath = req.query.path as string;
-      if (!filePath) {
-        return res.status(400).json({ error: "File path is required" });
+      if (!fs.existsSync(fullPath)) {
+        return res.status(404).json({ error: "File not found" });
       }
 
-      // Remove any leading 'content/' from the path since we'll add it
-      const cleanPath = filePath.replace(/^content\//, "");
-      const fullPath = path.join(contentDir, cleanPath);
+      const content = await readJsonFile(fullPath);
+      return res.status(200).json({ content });
 
-      // Security check to prevent directory traversal
-      if (!fullPath.startsWith(contentDir)) {
-        return res.status(403).json({ error: "Access denied" });
-      }
+    } else if (req.method === "POST") {
+      // Write file
+      const body = WriteFileBodySchema.parse(req.body);
+      const fullPath = getFullPath(body.path);
 
-      console.log("Reading file from:", fullPath);
-      const content = await fs.promises.readFile(fullPath, "utf8");
-      res.status(200).json({ content });
-    } catch (error) {
-      console.error("Error reading file:", error);
-      res.status(500).json({ error: "Failed to read file" });
+      ensureContentDirectory();
+      await writeJsonFile(fullPath, body.content);
+      return res.status(200).json({ content: body.content });
+
+    } else {
+      return res.status(405).json({ error: "Method not allowed" });
     }
-  } else if (req.method === "POST") {
-    try {
-      const { path: filePath, content } = req.body;
-      if (!filePath || content === undefined) {
-        return res
-          .status(400)
-          .json({ error: "File path and content are required" });
-      }
+  } catch (error) {
+    console.error("File operation error:", error);
 
-      // Remove any leading 'content/' from the path since we'll add it
-      const cleanPath = filePath.replace(/^content\//, "");
-      const fullPath = path.join(contentDir, cleanPath);
-
-      // Security check to prevent directory traversal
-      if (!fullPath.startsWith(contentDir)) {
-        return res.status(403).json({ error: "Access denied" });
-      }
-
-      // Ensure the directory exists
-      await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
-
-      await fs.promises.writeFile(fullPath, content, "utf8");
-      res.status(200).json({ success: true });
-    } catch (error) {
-      console.error("Error writing file:", error);
-      res.status(500).json({ error: "Failed to write file" });
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: "Invalid request",
+        details: error.errors,
+      });
     }
-  } else {
-    res.setHeader("Allow", ["GET", "POST"]);
-    res.status(405).json({ error: `Method ${req.method} not allowed` });
+
+    if (error instanceof ValidationError) {
+      return res.status(400).json({
+        error: error.message,
+        details: error.errors,
+      });
+    }
+
+    return res.status(500).json({
+      error: "Internal server error",
+      details: (error as Error).message,
+    });
   }
 }

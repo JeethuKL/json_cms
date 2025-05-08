@@ -2,14 +2,19 @@ import fs from "fs";
 import path from "path";
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/node";
+import { z } from "zod";
 
-type StatusMatrix = Array<[string, number, number, number]>;
-type CommitResult = {
-  oid: string;
-  commit: { message: string; tree: string; parent: string[] };
-};
+// Type definitions
+const GitConfigSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  remote: z.string().default("origin"),
+  branch: z.string().default("main"),
+});
 
-type LogEntry = {
+type GitConfig = z.infer<typeof GitConfigSchema>;
+
+interface GitCommit {
   oid: string;
   commit: {
     message: string;
@@ -21,112 +26,180 @@ type LogEntry = {
       timestamp: number;
     };
   };
-};
+}
+
+type StatusMatrix = Array<[string, number, number, number]>;
+
+export class GitError extends Error {
+  constructor(message: string, public readonly code: string) {
+    super(message);
+    this.name = "GitError";
+  }
+}
 
 export class GitService {
   private baseUrl: string;
+  private config: GitConfig;
 
-  constructor() {
+  constructor(config?: Partial<GitConfig>) {
     this.baseUrl = "/api";
+    this.config = GitConfigSchema.parse({
+      name: "JSON CMS",
+      email: "json-cms@example.com",
+      remote: "origin",
+      branch: "main",
+      ...config,
+    });
+  }
+
+  private async handleRequest<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<T> {
+    const response = await fetch(`${this.baseUrl}${endpoint}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...options.headers,
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: "Unknown error" }));
+      throw new GitError(error.message || response.statusText, response.status.toString());
+    }
+
+    return response.json();
   }
 
   async readFile(filePath: string): Promise<string> {
-    const cleanPath = filePath.replace(/^content\//, "");
-    const response = await fetch(
-      `${this.baseUrl}/file?path=${encodeURIComponent(cleanPath)}`
-    );
-    if (!response.ok) {
-      throw new Error(`Failed to read file: ${response.statusText}`);
+    try {
+      const cleanPath = filePath.replace(/^content\//, "");
+      const data = await this.handleRequest<{ content: string }>(
+        `/file?path=${encodeURIComponent(cleanPath)}`
+      );
+      return data.content;
+    } catch (error) {
+      throw new GitError(
+        `Failed to read file ${filePath}: ${(error as Error).message}`,
+        "READ_ERROR"
+      );
     }
-    const data = await response.json();
-    return data.content;
   }
 
   async saveFile(filePath: string, content: string): Promise<void> {
-    const cleanPath = filePath.replace(/^content\//, "");
-    const response = await fetch(`${this.baseUrl}/file`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ path: cleanPath, content }),
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to save file: ${response.statusText}`);
+    try {
+      const cleanPath = filePath.replace(/^content\//, "");
+      await this.handleRequest("/file", {
+        method: "POST",
+        body: JSON.stringify({ path: cleanPath, content }),
+      });
+    } catch (error) {
+      throw new GitError(
+        `Failed to save file ${filePath}: ${(error as Error).message}`,
+        "SAVE_ERROR"
+      );
     }
   }
 
   async commitChanges(message: string): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/git/commit`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ message }),
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to commit changes: ${response.statusText}`);
-    }
-    const data = await response.json();
-    return data.commitId;
-  }
-
-  async getStatus(): Promise<Array<[string, number, number, number]>> {
-    const response = await fetch(`${this.baseUrl}/git/status`);
-    if (!response.ok) {
-      throw new Error(`Failed to get status: ${response.statusText}`);
-    }
-    const data = await response.json();
-    return data.status;
-  }
-
-  async getHistory(filepath: string): Promise<Array<LogEntry>> {
-    const commits = await git.log({
-      fs,
-      dir: this.dir,
-      filepath,
-    });
-
-    return commits;
-  }
-
-  async checkout(ref: string): Promise<void> {
-    await git.checkout({
-      fs,
-      dir: this.dir,
-      ref,
-    });
-  }
-
-  async push(
-    remote: string = "origin",
-    branch: string = "main"
-  ): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/git/push`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ remote, branch }),
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to push changes: ${response.statusText}`);
+    try {
+      const data = await this.handleRequest<{ commitId: string }>("/git/commit", {
+        method: "POST",
+        body: JSON.stringify({ message }),
+      });
+      return data.commitId;
+    } catch (error) {
+      throw new GitError(
+        `Failed to commit changes: ${(error as Error).message}`,
+        "COMMIT_ERROR"
+      );
     }
   }
 
-  async pull(
-    remote: string = "origin",
-    branch: string = "main"
-  ): Promise<void> {
-    const response = await fetch(`${this.baseUrl}/git/pull`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ remote, branch }),
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to pull changes: ${response.statusText}`);
+  async getStatus(): Promise<StatusMatrix> {
+    try {
+      const data = await this.handleRequest<{ status: StatusMatrix }>("/git/status");
+      return data.status;
+    } catch (error) {
+      throw new GitError(
+        `Failed to get status: ${(error as Error).message}`,
+        "STATUS_ERROR"
+      );
+    }
+  }
+
+  async push(): Promise<void> {
+    try {
+      await this.handleRequest("/git/push", {
+        method: "POST",
+        body: JSON.stringify({
+          remote: this.config.remote,
+          branch: this.config.branch,
+        }),
+      });
+    } catch (error) {
+      throw new GitError(
+        `Failed to push changes: ${(error as Error).message}`,
+        "PUSH_ERROR"
+      );
+    }
+  }
+
+  async pull(): Promise<void> {
+    try {
+      await this.handleRequest("/git/pull", {
+        method: "POST",
+        body: JSON.stringify({
+          remote: this.config.remote,
+          branch: this.config.branch,
+        }),
+      });
+    } catch (error) {
+      throw new GitError(
+        `Failed to pull changes: ${(error as Error).message}`,
+        "PULL_ERROR"
+      );
+    }
+  }
+
+  async resolveConflicts(filePath: string, content: string): Promise<void> {
+    try {
+      await this.saveFile(filePath, content);
+      await this.commitChanges(`Resolve conflicts in ${filePath}`);
+    } catch (error) {
+      throw new GitError(
+        `Failed to resolve conflicts: ${(error as Error).message}`,
+        "CONFLICT_ERROR"
+      );
+    }
+  }
+
+  async getHistory(filePath: string): Promise<GitCommit[]> {
+    try {
+      const data = await this.handleRequest<{ history: GitCommit[] }>(
+        `/git/history?path=${encodeURIComponent(filePath)}`
+      );
+      return data.history;
+    } catch (error) {
+      throw new GitError(
+        `Failed to get history: ${(error as Error).message}`,
+        "HISTORY_ERROR"
+      );
+    }
+  }
+
+  async revertChanges(filePath: string): Promise<void> {
+    try {
+      await this.handleRequest("/git/revert", {
+        method: "POST",
+        body: JSON.stringify({ path: filePath }),
+      });
+    } catch (error) {
+      throw new GitError(
+        `Failed to revert changes: ${(error as Error).message}`,
+        "REVERT_ERROR"
+      );
     }
   }
 }
