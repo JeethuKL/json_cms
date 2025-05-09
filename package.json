@@ -1,10 +1,10 @@
 {
-  "name": "json-cms",
-  "version": "0.1.0",
-  "description": "Git-based JSON CMS for Next.js projects with real-time preview",
+  "name": "next-json-cms",
+  "version": "1.0.5",
+  "description": "Git-based JSON CMS for Next.js projects with real-time preview - supports both app and pages router",
   "main": "dist/index.js",
   "bin": {
-    "json-cms": "./dist/cli/index.js"
+    "next-json-cms": "./dist/cli/index.js"
   },
   "scripts": {
     "dev": "next dev",
@@ -59,18 +59,39 @@
     "git",
     "nextjs",
     "editor",
-    "real-time-preview"
+    "real-time-preview",
+    "app-router",
+    "pages-router"
   ],
   "author": "",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/json-cms.git"
+    "url": "https://github.com/yourusername/next-json-cms.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/json-cms/issues"
+    "url": "https://github.com/yourusername/next-json-cms/issues"
   },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "templates",
+    "LICENSE",
+    "README.md"
+  ],
+  "overrides": {
+    "react-json-view": {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0"
+    }
+  },
+  "resolutions": {
+    "react-json-view/react": "^18.2.0",
+    "react-json-view/react-dom": "^18.2.0"
   }
 }

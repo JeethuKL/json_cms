@@ -1,6 +1,6 @@
-# JSON CMS
+# Next.js JSON CMS
 
-A Git-based JSON CMS for Next.js projects. Edit your JSON content files with a beautiful UI, with automatic Git versioning, schema validation, and real-time preview.
+A Git-based JSON CMS for Next.js projects with support for both App Router and Pages Router. Edit your JSON content files with a beautiful UI, with automatic Git versioning, schema validation, and real-time preview.
 
 ## Features
 
@@ -11,23 +11,36 @@ A Git-based JSON CMS for Next.js projects. Edit your JSON content files with a b
 - 🔍 JSON schema validation
 - ⚡ Real-time preview
 - 🚀 Easy integration with Next.js projects
+- ✨ Full support for both App Router and Pages Router
 
 ## Installation
 
 ```bash
-# Create a new project
-npx json-cms init my-project
+# Create a new project (Pages Router - default)
+npx next-json-cms init my-project
 
-# Or add to an existing project
+# Create a new project with App Router
+npx next-json-cms init my-project --router app
+
+# Or add to an existing project (Pages Router - default)
 cd existing-project
-npx json-cms init
+npx next-json-cms init
+
+# Or add to an existing project with App Router
+cd existing-project
+npx next-json-cms init --router app
 ```
 
 ## Quick Start
 
-1. Initialize a new project:
+1. Initialize a new project with your preferred router type:
 ```bash
-npx json-cms init my-project
+# For Pages Router (default)
+npx next-json-cms init my-project
+
+# For App Router
+npx next-json-cms init my-project --router app
+
 cd my-project
 npm install
 ```
@@ -44,25 +57,54 @@ npm run cms
 
 ## Project Structure
 
+### Pages Router Structure
 ```
 your-project/
-├── content/               # Your JSON content files
+├── content/              # Your JSON content files
 │   ├── schema/           # JSON schema definitions
 │   └── example.json      # Example content file
 ├── src/
 │   ├── pages/            # Next.js pages
+│   │   ├── api/          # API routes
+│   │   └── editor/       # CMS editor pages
+│   └── components/       # React components
+└── package.json
+```
+
+### App Router Structure
+```
+your-project/
+├── content/              # Your JSON content files
+│   ├── schema/           # JSON schema definitions
+│   └── example.json      # Example content file
+├── src/
+│   ├── app/              # Next.js app directory
+│   │   ├── api/          # API routes
+│   │   └── editor/       # CMS editor pages
 │   └── components/       # React components
 └── package.json
 ```
 
 ## Configuration
 
+### Router Configuration
+
+Specify your preferred Next.js router when initializing the project:
+
+```bash
+# For Pages Router (default)
+npx next-json-cms init --router pages
+
+# For App Router
+npx next-json-cms init --router app
+```
+
 ### Git Configuration
 
 You can configure Git settings during initialization:
 
 ```bash
-npx json-cms init --git-username "Your Name" --git-email "your@email.com"
+npx next-json-cms init --git-username "Your Name" --git-email "your@email.com"
 ```
 
 Or manually in your project:
@@ -117,7 +159,7 @@ Example schema (`content/schema/blog.schema.json`):
 Start the editor with custom options:
 
 ```bash
-npx json-cms start --port 3001 --host 0.0.0.0
+npx next-json-cms start --port 3001 --host 0.0.0.0
 ```
 
 Available options:
@@ -126,7 +168,7 @@ Available options:
 
 ## Usage in Next.js Projects
 
-1. Access your content files directly:
+### Pages Router Usage
 
 ```typescript
 import fs from 'fs';
@@ -144,22 +186,38 @@ export async function getStaticProps() {
     },
   };
 }
+
+export default function Blog({ content }) {
+  return (
+    <div>
+      <h1>{content.title}</h1>
+      {content.posts.map(post => (
+        <article key={post.id}>
+          <h2>{post.title}</h2>
+          <p>{post.content}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
 ```
 
-2. Use the content in your components:
+### App Router Usage
 
 ```typescript
-// pages/blog.tsx
-interface BlogContent {
-  title: string;
-  posts: Array<{
-    id: number;
-    title: string;
-    content: string;
-  }>;
+// app/blog/page.tsx
+import fs from 'fs';
+import path from 'path';
+
+async function getBlogData() {
+  return JSON.parse(
+    fs.readFileSync(path.join(process.cwd(), 'content', 'blog.json'), 'utf-8')
+  );
 }
 
-export default function Blog({ content }: { content: BlogContent }) {
+export default async function Blog() {
+  const content = await getBlogData();
+  
   return (
     <div>
       <h1>{content.title}</h1>
@@ -191,6 +249,21 @@ npm test
 
 # Format code
 npm run format
+```
+
+## Publishing the Package
+
+To publish the package to npm:
+
+```bash
+# Login to npm
+npm login
+
+# Build the CLI
+npm run build:cli
+
+# Publish the package
+npm publish
 ```
 
 ## Contributing
