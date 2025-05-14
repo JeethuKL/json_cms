@@ -9,7 +9,6 @@ interface InitOptions {
   dir: string;
   gitUsername?: string;
   gitEmail?: string;
-  router: "app" | "pages";
 }
 
 interface StartOptions {
@@ -39,15 +38,8 @@ program
   )
   .option("--git-username <username>", "Git username for commits")
   .option("--git-email <email>", "Git email for commits")
-  .option("-r, --router <type>", "Next.js router type (app or pages)", "pages")
   .action(async (directoryArg, options: InitOptions) => {
     try {
-      // Validate router option
-      if (options.router !== "app" && options.router !== "pages") {
-        console.error('Error: Router type must be either "app" or "pages"');
-        process.exit(1);
-      }
-
       // Use the first argument as directory if provided, otherwise use --dir option,
       // or default to current directory
       const directory = directoryArg || options.dir || ".";
@@ -58,7 +50,6 @@ program
           username: options.gitUsername,
           email: options.gitEmail,
         },
-        router: options.router,
       });
     } catch (error) {
       console.error("Failed to initialize project:", (error as Error).message);

@@ -15,30 +15,36 @@ async function isNextProject(): Promise<boolean> {
 
   try {
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
-    return !!packageJson.dependencies?.next || !!packageJson.devDependencies?.next;
+    return (
+      !!packageJson.dependencies?.next || !!packageJson.devDependencies?.next
+    );
   } catch {
     return false;
   }
 }
 
-function runCommand(command: string, args: string[], options: { env: NodeJS.ProcessEnv }): Promise<void> {
+async function runCommand(
+  command: string,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv } = {}
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: "inherit",
-      env: options.env,
       shell: true,
+      env: options.env,
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Command failed with code ${code}`));
+      }
     });
 
     child.on("error", (error) => {
-      reject(new Error(`Failed to start server: ${error.message}`));
-    });
-
-    child.on("exit", (code) => {
-      if (code === 0 || code === null) {
-        resolve();
-      } else {
-        reject(new Error(`Process exited with code ${code}`));
-      }
+      reject(error);
     });
   });
 }
@@ -58,7 +64,6 @@ export async function startEditor(options: StartOptions): Promise<void> {
     ...process.env,
     PORT: port.toString(),
     HOSTNAME: host,
-    NEXT_PUBLIC_API_BASE_URL: `http://${host}:${port}`,
   };
 
   // Check if this is a Next.js project
@@ -66,34 +71,14 @@ export async function startEditor(options: StartOptions): Promise<void> {
 
   if (isNext) {
     console.log("📦 Starting development server...");
-    await runCommand("next", ["dev", "-p", port.toString()], { env });
+    console.log(
+      `\nThe CMS will be available at: http://${host}:${port}/editor`
+    );
+    console.log(`The home page will be available at: http://${host}:${port}`);
+    await runCommand("npm", ["run", "dev"], { env });
   } else {
-    // If it's not a Next.js project, we need to install and run the standalone editor
-    console.log("🚀 Starting JSON CMS editor...");
-
-    // Create temporary next.config.js if it doesn't exist
-    const nextConfigPath = path.join(process.cwd(), "next.config.js");
-    if (!fs.existsSync(nextConfigPath)) {
-      fs.writeFileSync(
-        nextConfigPath,
-        `
-module.exports = {
-  reactStrictMode: true,
-  pageExtensions: ["tsx", "ts", "jsx", "js"],
-};
-`.trim()
-      );
-    }
-
-    // Run the editor
-    try {
-      await runCommand("npx", ["next", "dev", "-p", port.toString()], { env });
-    } catch (error) {
-      console.error("Failed to start editor:", (error as Error).message);
-      process.exit(1);
-    }
+    throw new Error(
+      "This is not a Next.js project. Please run this command in a valid Next.js project directory."
+    );
   }
-
-  console.log(`\n🌎 JSON CMS editor is running at http://${host}:${port}/editor`);
-  console.log("\nPress Ctrl+C to stop the server");
 }
