@@ -1,6 +1,6 @@
 {
   "name": "next-json-cms",
-  "version": "1.0.5",
+  "version": "1.0.14",
   "description": "Git-based JSON CMS for Next.js projects with real-time preview - supports both app and pages router",
   "main": "dist/index.js",
   "bin": {
@@ -34,7 +34,8 @@
     "zod": "^3.22.4",
     "react-json-view": "^1.21.3",
     "classnames": "^2.5.1",
-    "lodash": "^4.17.21"
+    "lodash": "^4.17.21",
+    "inquirer": "^9.2.12"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.2",
@@ -51,7 +52,9 @@
     "prettier": "^3.2.5",
     "rimraf": "^5.0.5",
     "tailwindcss": "^3.4.1",
-    "ts-jest": "^29.1.2"
+    "ts-jest": "^29.1.2",
+    "@types/inquirer": "^9.0.7",
+    "ts-node": "^10.9.1"
   },
   "keywords": [
     "cms",
