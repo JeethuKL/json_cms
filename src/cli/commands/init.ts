@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import inquirer from "inquirer";
+import { simpleGit } from "simple-git";
 
 interface GitConfig {
   username?: string;
@@ -1232,446 +1233,337 @@ export async function initProject(options: InitOptions): Promise<void> {
   );
   console.log("\n🚀 Let's get started!\n");
 
-  // Ensure target directory exists
+  // Ensure target directory exists using absolute path
   const targetDir = path.resolve(directory);
+  const originalDir = process.cwd();
+
   try {
+    // Create the target directory if it doesn't exist
     if (!fs.existsSync(targetDir)) {
       console.log(`Creating directory: ${targetDir}`);
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    // Store the original directory
-    const originalDir = process.cwd();
+    // Create project structure based on router type and src preference
+    const baseDir = useSrc ? "src" : "";
+    let directories = [
+      "content",
+      "content/schema",
+      `${baseDir}/components/editor`,
+      `${baseDir}/services`,
+      `${baseDir}/hooks`,
+      `${baseDir}/styles`,
+      `${baseDir}/store`,
+    ];
 
-    try {
-      // Change to the target directory for Git operations
-      process.chdir(targetDir);
-
-      // Create project structure based on router type and src preference
-      const baseDir = useSrc ? "src" : "";
-      let directories = [
-        "content",
-        "content/schema",
-        `${baseDir}/components/editor`,
-        `${baseDir}/services`,
-        `${baseDir}/hooks`,
-        `${baseDir}/styles`,
-        `${baseDir}/store`,
+    // Add router-specific directories
+    if (router === "pages") {
+      directories = [
+        ...directories,
+        `${baseDir}/pages`,
+        `${baseDir}/pages/api`,
+        `${baseDir}/pages/editor`,
       ];
+    } else if (router === "app") {
+      directories = [
+        ...directories,
+        `${baseDir}/app`,
+        `${baseDir}/app/api`,
+        `${baseDir}/app/editor`,
+      ];
+    }
 
-      // Add router-specific directories
-      if (router === "pages") {
-        directories = [
-          ...directories,
-          `${baseDir}/pages`,
-          `${baseDir}/pages/api`,
-          `${baseDir}/pages/editor`,
-        ];
-      } else if (router === "app") {
-        directories = [
-          ...directories,
-          `${baseDir}/app`,
-          `${baseDir}/app/api`,
-          `${baseDir}/app/editor`,
-        ];
+    // Create all directories first
+    directories.forEach((dir) => {
+      const fullPath = path.join(targetDir, dir);
+      if (!fs.existsSync(fullPath)) {
+        fs.mkdirSync(fullPath, { recursive: true });
       }
+    });
 
-      // Create all directories
-      directories.forEach((dir) => {
-        const fullPath = path.join(targetDir, dir);
-        if (!fs.existsSync(fullPath)) {
-          fs.mkdirSync(fullPath, { recursive: true });
-        }
-      });
+    // Create template files
+    Object.entries(TEMPLATE_FILES).forEach(([filePath, content]) => {
+      const fullPath = path.join(targetDir, filePath);
+      fs.writeFileSync(fullPath, JSON.stringify(content, null, 2));
+    });
 
-      // Create template files
-      Object.entries(TEMPLATE_FILES).forEach(([filePath, content]) => {
-        const fullPath = path.join(targetDir, filePath);
-        fs.writeFileSync(fullPath, JSON.stringify(content, null, 2));
-      });
-
-      // Create app.json with example content
-      const appJsonPath = path.join(targetDir, "app.json");
-      fs.writeFileSync(
-        appJsonPath,
-        JSON.stringify(
-          {
-            name: path.basename(targetDir),
-            displayName: path.basename(targetDir),
-            version: "1.0.0",
-            description: "A Next.js project with JSON CMS",
-            router: router,
-            useSrc: useSrc,
-            content: {
-              example: {
-                title: "Example Content",
-                description: "This is an example content from app.json",
-                items: [
-                  { id: 1, name: "Item 1" },
-                  { id: 2, name: "Item 2" },
-                ],
-              },
-            },
-          },
-          null,
-          2
-        )
-      );
-
-      // Create CSS file
-      fs.writeFileSync(
-        path.join(targetDir, `${baseDir}/styles/globals.css`),
-        GLOBAL_CSS
-      );
-
-      // Create Tailwind config
-      fs.writeFileSync(
-        path.join(targetDir, "tailwind.config.js"),
-        TAILWIND_CONFIG
-      );
-
-      // Create PostCSS config
-      fs.writeFileSync(
-        path.join(targetDir, "postcss.config.js"),
-        POSTCSS_CONFIG
-      );
-
-      // Create the EditorPage component and related components
-      fs.writeFileSync(
-        path.join(targetDir, `${baseDir}/components/editor/EditorPage.tsx`),
-        EDITOR_COMPONENT
-      );
-
-      fs.writeFileSync(
-        path.join(targetDir, `${baseDir}/components/editor/FileTree.tsx`),
-        FILE_TREE_COMPONENT
-      );
-
-      fs.writeFileSync(
-        path.join(targetDir, `${baseDir}/components/editor/EditorToolbar.tsx`),
-        EDITOR_TOOLBAR_COMPONENT
-      );
-
-      // Create service files
-      fs.writeFileSync(
-        path.join(targetDir, `${baseDir}/services/contentService.ts`),
-        SERVICE_TEMPLATE
-      );
-
-      fs.writeFileSync(
-        path.join(targetDir, `${baseDir}/services/gitService.ts`),
-        GIT_SERVICE_TEMPLATE
-      );
-
-      // Create the store directory and editorStore file
-      const storeDir = path.join(targetDir, `${baseDir}/store`);
-      fs.mkdirSync(storeDir, { recursive: true });
-
-      // Create editorStore.ts
-      const editorStoreContent = `'use client';
-
-import { create } from 'zustand';
-import { contentService } from '@/services/contentService';
-
-interface EditorState {
-  currentFile: string | null;
-  content: string;
-  originalContent: string;
-  isLoading: boolean;
-  error: string | null;
-  hasChanges: boolean;
-  
-  setCurrentFile: (file: string | null) => void;
-  setContent: (content: string) => void;
-  loadContent: (filename: string) => Promise<void>;
-  saveContent: () => Promise<void>;
-  refreshContent: () => Promise<void>;
-}
-
-export const useEditorStore = create<EditorState>((set, get) => ({
-  currentFile: null,
-  content: "",
-  originalContent: "",
-  isLoading: false,
-  error: null,
-  hasChanges: false,
-  
-  setCurrentFile: (file) => set({ currentFile: file }),
-  
-  setContent: (content) => {
-    set(state => ({ 
-      content, 
-      hasChanges: content !== state.originalContent 
-    }));
-  },
-  
-  loadContent: async (filename) => {
-    set({ isLoading: true, error: null });
-    
-    try {
-      const content = await contentService.getContent(filename);
-      const contentStr = JSON.stringify(content, null, 2);
-      
-      set({ 
-        content: contentStr,
-        originalContent: contentStr,
-        currentFile: filename,
-        hasChanges: false
-      });
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : String(error) 
-      });
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-  
-  saveContent: async () => {
-    const { currentFile, content } = get();
-    
-    if (!currentFile) return;
-    
-    set({ isLoading: true, error: null });
-    
-    try {
-      // Parse JSON to validate and format
-      const parsedContent = JSON.parse(content);
-      
-      // Save content
-      await contentService.saveContent(currentFile, parsedContent);
-      
-      // Update original content to mark as saved
-      set({ 
-        originalContent: content,
-        hasChanges: false
-      });
-    } catch (error) {
-      set({ 
-        error: error instanceof Error ? error.message : String(error) 
-      });
-    } finally {
-      set({ isLoading: false });
-    }
-  },
-  
-  refreshContent: async () => {
-    const { currentFile } = get();
-    if (currentFile) {
-      await get().loadContent(currentFile);
-    }
-  }
-}));`;
-
-      fs.writeFileSync(
-        path.join(storeDir, "editorStore.ts"),
-        editorStoreContent
-      );
-
-      // Create the home page
-      if (router === "app") {
-        fs.writeFileSync(
-          path.join(targetDir, `${baseDir}/app/page.tsx`),
-          HOME_PAGE_CONTENT
-        );
-
-        // Create app router editor page
-        fs.writeFileSync(
-          path.join(targetDir, `${baseDir}/app/editor/page.tsx`),
-          EDITOR_PAGE_CONTENT
-        );
-
-        // Create API route for app router content
-        const contentApiDirPath = path.join(
-          targetDir,
-          `${baseDir}/app/api/content/route.ts`
-        );
-        fs.mkdirSync(path.dirname(contentApiDirPath), { recursive: true });
-        fs.writeFileSync(contentApiDirPath, CONTENT_API_APP);
-
-        // Create API routes for app router git operations
-        const gitApiDirPath = path.join(
-          targetDir,
-          `${baseDir}/app/api/git/[action]/route.ts`
-        );
-        fs.mkdirSync(path.dirname(gitApiDirPath), { recursive: true });
-        fs.writeFileSync(gitApiDirPath, GIT_API_APP);
-
-        // Create root layout file if it doesn't exist
-        const layoutPath = path.join(targetDir, `${baseDir}/app/layout.tsx`);
-        if (!fs.existsSync(layoutPath)) {
-          fs.writeFileSync(layoutPath, LAYOUT_CONTENT);
-        }
-      } else {
-        // Create pages router home page
-        fs.writeFileSync(
-          path.join(targetDir, `${baseDir}/pages/index.tsx`),
-          HOME_PAGE_CONTENT
-        );
-
-        // Create pages router editor page
-        fs.writeFileSync(
-          path.join(targetDir, `${baseDir}/pages/editor/index.tsx`),
-          EDITOR_PAGE_CONTENT
-        );
-
-        // Create API route for pages router content
-        const contentApiDirPath = path.join(
-          targetDir,
-          `${baseDir}/pages/api/content.ts`
-        );
-        fs.mkdirSync(path.dirname(contentApiDirPath), { recursive: true });
-        fs.writeFileSync(contentApiDirPath, CONTENT_API_PAGES);
-
-        // Create API routes for pages router git operations
-        const gitApiDirPath = path.join(
-          targetDir,
-          `${baseDir}/pages/api/git/[action].ts`
-        );
-        fs.mkdirSync(path.dirname(gitApiDirPath), { recursive: true });
-        fs.writeFileSync(gitApiDirPath, GIT_API_PAGES);
-
-        // Create _app.tsx for global CSS
-        fs.writeFileSync(
-          path.join(targetDir, `${baseDir}/pages/_app.tsx`),
-          APP_CONTENT
-        );
-      }
-
-      // Create tsconfig.json with paths alias configuration
-      const tsconfigPath = path.join(targetDir, "tsconfig.json");
-      fs.writeFileSync(
-        tsconfigPath,
-        JSON.stringify(
-          {
-            compilerOptions: {
-              target: "es5",
-              lib: ["dom", "dom.iterable", "esnext"],
-              allowJs: true,
-              skipLibCheck: true,
-              strict: true,
-              forceConsistentCasingInFileNames: true,
-              noEmit: true,
-              esModuleInterop: true,
-              module: "esnext",
-              moduleResolution: "bundler",
-              resolveJsonModule: true,
-              isolatedModules: true,
-              jsx: "preserve",
-              incremental: true,
-              plugins: [
-                {
-                  name: "next",
-                },
+    // Create app.json with example content
+    const appJsonPath = path.join(targetDir, "app.json");
+    fs.writeFileSync(
+      appJsonPath,
+      JSON.stringify(
+        {
+          name: path.basename(targetDir),
+          displayName: path.basename(targetDir),
+          version: "1.0.0",
+          description: "A Next.js project with JSON CMS",
+          router: router,
+          useSrc: useSrc,
+          content: {
+            example: {
+              title: "Example Content",
+              description: "This is an example content from app.json",
+              items: [
+                { id: 1, name: "Item 1" },
+                { id: 2, name: "Item 2" },
               ],
-              paths: {
-                "@/*": [useSrc ? "./src/*" : "./*"],
-              },
             },
-            include: [
-              "next-env.d.ts",
-              "**/*.ts",
-              "**/*.tsx",
-              ".next/types/**/*.ts",
-            ],
-            exclude: ["node_modules"],
           },
-          null,
-          2
-        )
-      );
-
-      // Initialize Git if not already initialized
-      if (!fs.existsSync(path.join(targetDir, ".git"))) {
-        try {
-          execSync("git init");
-          console.log("✓ Initialized Git repository");
-
-          if (gitConfig?.username) {
-            execSync(`git config user.name "${gitConfig.username}"`);
-          }
-          if (gitConfig?.email) {
-            execSync(`git config user.email "${gitConfig.email}"`);
-          }
-
-          const gitignore = [
-            "node_modules/",
-            ".next/",
-            "dist/",
-            ".env",
-            ".env.local",
-            "*.log",
-          ].join("\n");
-          fs.writeFileSync(path.join(targetDir, ".gitignore"), gitignore);
-
-          execSync("git add .");
-          execSync('git commit -m "Initial commit: JSON CMS setup"');
-        } catch (error) {
-          console.warn(
-            "Warning: Git initialization failed:",
-            (error as Error).message
-          );
-        }
-      }
-
-      // Create or update package.json
-      const packageJsonPath = path.join(targetDir, "package.json");
-      const packageJson = fs.existsSync(packageJsonPath)
-        ? JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"))
-        : {};
-
-      const updatedPackageJson = {
-        ...packageJson,
-        name: path.basename(targetDir),
-        version: "0.1.0",
-        private: true,
-        scripts: {
-          dev: "next dev",
-          build: "next build",
-          start: "next start",
-          lint: "next lint",
         },
-        dependencies: {
-          next: "14.1.0",
-          react: "^18.2.0",
-          "react-dom": "^18.2.0",
-          "@monaco-editor/react": "^4.6.0",
-          "simple-git": "^3.22.0",
-          tailwindcss: "^3.4.1",
-          autoprefixer: "^10.4.17",
-          postcss: "^8.4.35",
-          zustand: "^4.5.1",
-        },
-        devDependencies: {
-          typescript: "^5.3.3",
-          "@types/node": "^20.11.19",
-          "@types/react": "^18.2.57",
-          "@types/react-dom": "^18.2.19",
-          eslint: "^8.56.0",
-          "eslint-config-next": "14.1.0",
-        },
-      };
+        null,
+        2
+      )
+    );
 
+    // Create CSS file
+    fs.writeFileSync(
+      path.join(targetDir, `${baseDir}/styles/globals.css`),
+      GLOBAL_CSS
+    );
+
+    // Create Tailwind config
+    fs.writeFileSync(
+      path.join(targetDir, "tailwind.config.js"),
+      TAILWIND_CONFIG
+    );
+
+    // Create PostCSS config
+    fs.writeFileSync(path.join(targetDir, "postcss.config.js"), POSTCSS_CONFIG);
+
+    // Create the EditorPage component and related components
+    fs.writeFileSync(
+      path.join(targetDir, `${baseDir}/components/editor/EditorPage.tsx`),
+      EDITOR_COMPONENT
+    );
+
+    fs.writeFileSync(
+      path.join(targetDir, `${baseDir}/components/editor/FileTree.tsx`),
+      FILE_TREE_COMPONENT
+    );
+
+    fs.writeFileSync(
+      path.join(targetDir, `${baseDir}/components/editor/EditorToolbar.tsx`),
+      EDITOR_TOOLBAR_COMPONENT
+    );
+
+    // Create service files
+    fs.writeFileSync(
+      path.join(targetDir, `${baseDir}/services/contentService.ts`),
+      SERVICE_TEMPLATE
+    );
+
+    fs.writeFileSync(
+      path.join(targetDir, `${baseDir}/services/gitService.ts`),
+      GIT_SERVICE_TEMPLATE
+    );
+
+    // Create the store directory and editorStore file
+    const storeDir = path.join(targetDir, `${baseDir}/store`);
+    fs.mkdirSync(storeDir, { recursive: true });
+
+    // Create editorStore.ts
+    fs.writeFileSync(path.join(storeDir, "editorStore.ts"), EDITOR_STORE);
+
+    // Create the home page
+    if (router === "app") {
       fs.writeFileSync(
-        packageJsonPath,
-        JSON.stringify(updatedPackageJson, null, 2)
+        path.join(targetDir, `${baseDir}/app/page.tsx`),
+        HOME_PAGE_CONTENT
       );
 
-      console.log("\n✨ Project initialized successfully!");
-      console.log(`\nRouter type: ${router}`);
-      console.log(`\nDirectory structure: ${useSrc ? "src" : "no-src"}`);
-      console.log(`\nProject created in: ${targetDir}`);
-      console.log("\nNext steps:");
-      console.log(`1. cd ${path.relative(originalDir, targetDir)}`);
-      console.log("2. Run 'npm install' to install dependencies");
-      console.log("3. Run 'npm run dev' to start the development server");
-      console.log(
-        "\nThe CMS will be available at: http://localhost:3000/editor"
+      // Create app router editor page
+      fs.writeFileSync(
+        path.join(targetDir, `${baseDir}/app/editor/page.tsx`),
+        EDITOR_PAGE_CONTENT
       );
-    } finally {
-      // Always return to the original directory
-      process.chdir(originalDir);
+
+      // Create API route for app router content
+      const contentApiDirPath = path.join(
+        targetDir,
+        `${baseDir}/app/api/content/route.ts`
+      );
+      fs.mkdirSync(path.dirname(contentApiDirPath), { recursive: true });
+      fs.writeFileSync(contentApiDirPath, CONTENT_API_APP);
+
+      // Create API routes for app router git operations
+      const gitApiDirPath = path.join(
+        targetDir,
+        `${baseDir}/app/api/git/[action]/route.ts`
+      );
+      fs.mkdirSync(path.dirname(gitApiDirPath), { recursive: true });
+      fs.writeFileSync(gitApiDirPath, GIT_API_APP);
+
+      // Create root layout file if it doesn't exist
+      const layoutPath = path.join(targetDir, `${baseDir}/app/layout.tsx`);
+      if (!fs.existsSync(layoutPath)) {
+        fs.writeFileSync(layoutPath, LAYOUT_CONTENT);
+      }
+    } else {
+      // Create pages router home page
+      fs.writeFileSync(
+        path.join(targetDir, `${baseDir}/pages/index.tsx`),
+        HOME_PAGE_CONTENT
+      );
+
+      // Create pages router editor page
+      fs.writeFileSync(
+        path.join(targetDir, `${baseDir}/pages/editor/index.tsx`),
+        EDITOR_PAGE_CONTENT
+      );
+
+      // Create API route for pages router content
+      const contentApiDirPath = path.join(
+        targetDir,
+        `${baseDir}/pages/api/content.ts`
+      );
+      fs.mkdirSync(path.dirname(contentApiDirPath), { recursive: true });
+      fs.writeFileSync(contentApiDirPath, CONTENT_API_PAGES);
+
+      // Create API routes for pages router git operations
+      const gitApiDirPath = path.join(
+        targetDir,
+        `${baseDir}/pages/api/git/[action].ts`
+      );
+      fs.mkdirSync(path.dirname(gitApiDirPath), { recursive: true });
+      fs.writeFileSync(gitApiDirPath, GIT_API_PAGES);
+
+      // Create _app.tsx for global CSS
+      fs.writeFileSync(
+        path.join(targetDir, `${baseDir}/pages/_app.tsx`),
+        APP_CONTENT
+      );
     }
+
+    // Create tsconfig.json with paths alias configuration
+    const tsconfigPath = path.join(targetDir, "tsconfig.json");
+    fs.writeFileSync(
+      tsconfigPath,
+      JSON.stringify(
+        {
+          compilerOptions: {
+            target: "es5",
+            lib: ["dom", "dom.iterable", "esnext"],
+            allowJs: true,
+            skipLibCheck: true,
+            strict: true,
+            forceConsistentCasingInFileNames: true,
+            noEmit: true,
+            esModuleInterop: true,
+            module: "esnext",
+            moduleResolution: "bundler",
+            resolveJsonModule: true,
+            isolatedModules: true,
+            jsx: "preserve",
+            incremental: true,
+            plugins: [
+              {
+                name: "next",
+              },
+            ],
+            paths: {
+              "@/*": [useSrc ? "./src/*" : "./*"],
+            },
+          },
+          include: [
+            "next-env.d.ts",
+            "**/*.ts",
+            "**/*.tsx",
+            ".next/types/**/*.ts",
+          ],
+          exclude: ["node_modules"],
+        },
+        null,
+        2
+      )
+    );
+
+    // Create or update package.json
+    const packageJsonPath = path.join(targetDir, "package.json");
+    const packageJson = fs.existsSync(packageJsonPath)
+      ? JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"))
+      : {};
+
+    const updatedPackageJson = {
+      ...packageJson,
+      name: path.basename(targetDir),
+      version: "0.1.0",
+      private: true,
+      scripts: {
+        dev: "next dev",
+        build: "next build",
+        start: "next start",
+        lint: "next lint",
+      },
+      dependencies: {
+        next: "14.1.0",
+        react: "^18.2.0",
+        "react-dom": "^18.2.0",
+        "@monaco-editor/react": "^4.6.0",
+        "simple-git": "^3.22.0",
+        tailwindcss: "^3.4.1",
+        autoprefixer: "^10.4.17",
+        postcss: "^8.4.35",
+        zustand: "^4.5.1",
+      },
+      devDependencies: {
+        typescript: "^5.3.3",
+        "@types/node": "^20.11.19",
+        "@types/react": "^18.2.57",
+        "@types/react-dom": "^18.2.19",
+        eslint: "^8.56.0",
+        "eslint-config-next": "14.1.0",
+      },
+    };
+
+    fs.writeFileSync(
+      packageJsonPath,
+      JSON.stringify(updatedPackageJson, null, 2)
+    );
+
+    // Initialize Git if not already initialized
+    if (!fs.existsSync(path.join(targetDir, ".git"))) {
+      try {
+        // Use absolute paths for Git operations
+        const git = simpleGit({ baseDir: targetDir });
+        await git.init();
+        console.log("✓ Initialized Git repository");
+
+        if (gitConfig?.username) {
+          await git.addConfig("user.name", gitConfig.username);
+        }
+        if (gitConfig?.email) {
+          await git.addConfig("user.email", gitConfig.email);
+        }
+
+        const gitignore = [
+          "node_modules/",
+          ".next/",
+          "dist/",
+          ".env",
+          ".env.local",
+          "*.log",
+        ].join("\n");
+        fs.writeFileSync(path.join(targetDir, ".gitignore"), gitignore);
+
+        await git.add(".");
+        await git.commit("Initial commit: JSON CMS setup");
+      } catch (error) {
+        console.warn(
+          "Warning: Git initialization failed:",
+          (error as Error).message
+        );
+      }
+    }
+
+    console.log("\n✨ Project initialized successfully!");
+    console.log(`\nRouter type: ${router}`);
+    console.log(`\nDirectory structure: ${useSrc ? "src" : "no-src"}`);
+    console.log(`\nProject created in: ${targetDir}`);
+    console.log("\nNext steps:");
+    console.log(`1. cd "${path.relative(originalDir, targetDir)}"`);
+    console.log("2. Run 'npm install' to install dependencies");
+    console.log("3. Run 'npm run dev' to start the development server");
+    console.log("\nThe CMS will be available at: http://localhost:3000/editor");
   } catch (error) {
     throw new Error(
       `Failed to initialize project: ${(error as Error).message}`

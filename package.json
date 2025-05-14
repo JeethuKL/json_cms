@@ -1,6 +1,6 @@
 {
   "name": "next-json-cms",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "Git-based JSON CMS for Next.js projects with real-time preview - supports both app and pages router",
   "main": "dist/index.js",
   "bin": {
