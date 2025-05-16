@@ -18,12 +18,35 @@ interface InitOptions {
 
 const TEMPLATE_FILES = {
   "content/example.json": {
-    title: "Example Content",
-    description: "Edit this content in the CMS",
-    items: [
-      { id: 1, name: "Item 1" },
-      { id: 2, name: "Item 2" },
+    title: "Welcome to JSON CMS",
+    description:
+      "This is a dynamic content management system for your Next.js application. Edit the content below using the CMS editor.",
+    features: [
+      {
+        id: 1,
+        title: "Easy Content Management",
+        description: "Edit your JSON content through a user-friendly interface",
+      },
+      {
+        id: 2,
+        title: "Real-time Updates",
+        description: "See your changes instantly on the website",
+      },
+      {
+        id: 3,
+        title: "Git Integration",
+        description: "Track content changes with built-in version control",
+      },
+      {
+        id: 4,
+        title: "Schema Validation",
+        description: "Ensure content structure remains consistent",
+      },
     ],
+    cta: {
+      text: "Start Editing",
+      link: "/editor",
+    },
   },
   "content/schema/example.schema.json": {
     $schema: "http://json-schema.org/draft-07/schema#",
@@ -132,7 +155,7 @@ export function EditorPage() {
 // File tree component
 const FILE_TREE_COMPONENT = `'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useEditorStore } from "@/store/editorStore";
 import { contentService } from "@/services/contentService";
 import { gitService } from "@/services/gitService";
@@ -148,38 +171,44 @@ export function FileTree() {
     setCurrentFile, 
     currentFile, 
     loadContent,
-    isLoading 
+    isLoading,
+    hasChanges 
   } = useEditorStore();
   const [files, setFiles] = useState<FileItem[]>([]);
 
-  useEffect(() => {
-    async function loadFiles() {
-      try {
-        // Load files from content directory
-        const contentFiles = await contentService.listContentFiles();
-        
-        // Get Git status for each file
-        const filesWithStatus = await Promise.all(
-          contentFiles.map(async (file) => {
-            const status = await gitService.getFileStatus(file.path);
-            return {
-              ...file,
-              status,
-            };
-          })
-        );
-        
-        setFiles(filesWithStatus);
-      } catch (error) {
-        console.error("Error loading files:", error);
-      }
+  const loadFiles = useCallback(async () => {
+    try {
+      // Load files from content directory
+      const contentFiles = await contentService.listContentFiles();
+      
+      // Get Git status for each file
+      const filesWithStatus = await Promise.all(
+        contentFiles.map(async (file) => {
+          const status = await gitService.getFileStatus(file.path);
+          return {
+            ...file,
+            status,
+          };
+        })
+      );
+      
+      setFiles(filesWithStatus);
+    } catch (error) {
+      console.error("Error loading files:", error);
     }
-    
-    loadFiles();
-    // Refresh file list every 5 seconds to update Git status
-    const interval = setInterval(loadFiles, 5000);
-    return () => clearInterval(interval);
   }, []);
+
+  // Initial load
+  useEffect(() => {
+    loadFiles();
+  }, [loadFiles]);
+
+  // Refresh when changes are made
+  useEffect(() => {
+    if (!hasChanges) {
+      loadFiles();
+    }
+  }, [hasChanges, loadFiles]);
 
   function handleFileClick(file: FileItem) {
     if (isLoading) return;
@@ -1049,18 +1078,10 @@ const POSTCSS_CONFIG = `module.exports = {
 }`;
 
 // Global CSS with Tailwind
-const GLOBAL_CSS = `@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-html, body {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-}`;
+const GLOBAL_CSS = `@import "tailwindcss"`;
 
 // Update the layout file content
-const LAYOUT_CONTENT = `import '../styles/globals.css';
+const LAYOUT_CONTENT = `import './globals.css';
 
 export const metadata = {
   title: 'JSON CMS',
@@ -1087,69 +1108,96 @@ export default function App({ Component, pageProps }: AppProps) {
   return <Component {...pageProps} />;
 }`;
 
-// Add home page content
-const HOME_PAGE_CONTENT = `'use client';
+// Components
+const CONTENT_DISPLAY_COMPONENT = `'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 
+interface Feature {
+  id: number;
+  title: string;
+  description: string;
+}
+
+interface CTA {
+  text: string;
+  link: string;
+}
+
 interface ContentData {
   title: string;
   description: string;
-  items: Array<{ id: number; name: string }>;
+  features: Feature[];
+  cta: CTA;
 }
 
-export default function Home() {
+export function ContentDisplay() {
   const [content, setContent] = useState<ContentData | null>(null);
 
   useEffect(() => {
-    // Fetch content from example.json
     fetch('/api/content?file=example.json')
       .then(res => res.json())
       .then(data => setContent(data))
       .catch(err => console.error('Error loading content:', err));
   }, []);
 
-  return (
-    <main className="min-h-screen p-8">
-      <div className="max-w-4xl mx-auto">
-        <h1 className="text-4xl font-bold mb-8">JSON CMS Demo</h1>
-        
-        <div className="mb-8">
-          <h2 className="text-2xl font-semibold mb-4">Getting Started</h2>
-          <p className="text-gray-600 mb-4">
-            This is a demo of the JSON CMS. The content below is loaded from the example.json file.
-            You can edit this content in the CMS editor.
-          </p>
-          <Link 
-            href="/editor" 
-            className="inline-block bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-          >
-            Open Editor
-          </Link>
-        </div>
+  if (!content) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
 
-        {content ? (
-          <div className="bg-white p-6 rounded-lg shadow">
-            <h2 className="text-2xl font-semibold mb-4">{content.title}</h2>
-            <p className="text-gray-600 mb-6">{content.description}</p>
-            
-            <div className="space-y-4">
-              <h3 className="text-xl font-medium">Items:</h3>
-              <ul className="space-y-2">
-                {content.items.map(item => (
-                  <li key={item.id} className="bg-gray-50 p-3 rounded">
-                    {item.name}
-                  </li>
-                ))}
-              </ul>
-            </div>
+  return (
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      {/* Hero Section */}
+      <div className="text-center mb-16">
+        <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-6">
+          {content.title}
+        </h1>
+        <p className="text-xl text-gray-600 mb-8 max-w-3xl mx-auto">
+          {content.description}
+        </p>
+        <Link 
+          href={content.cta.link}
+          className="inline-flex items-center justify-center px-6 py-3 border border-transparent text-base font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+        >
+          {content.cta.text}
+        </Link>
+      </div>
+
+      {/* Features Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {content.features.map((feature) => (
+          <div 
+            key={feature.id}
+            className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
+          >
+            <h3 className="text-xl font-semibold text-gray-900 mb-3">
+              {feature.title}
+            </h3>
+            <p className="text-gray-600">
+              {feature.description}
+            </p>
           </div>
-        ) : (
-          <div className="text-center py-8">
-            <p className="text-gray-500">Loading content...</p>
-          </div>
-        )}
+        ))}
+      </div>
+    </div>
+  );
+}`;
+
+// Add home page content
+const HOME_PAGE_CONTENT = `'use client';
+
+import { ContentDisplay } from '@/components/home/ContentDisplay';
+
+export default function Home() {
+  return (
+    <main className="min-h-screen bg-gradient-to-b from-gray-50 to-gray-100">
+      <div className="py-8">
+        <ContentDisplay />
       </div>
     </main>
   );
@@ -1240,16 +1288,29 @@ export async function initProject(options: InitOptions): Promise<void> {
   try {
     // Create Next.js project using create-next-app
     console.log("Creating Next.js project...");
-    const createNextAppCommand = `npx create-next-app@latest ${directory} --typescript --tailwind --eslint ${router === "app" ? "--app" : "--pages"} ${useSrc ? "--src-dir" : ""}`;
     
-    execSync(createNextAppCommand, { stdio: 'inherit' });
+    // For Pages Router, we use traditional flags
+    // For App Router, we include the --app flag
+    let createNextAppCommand = "npx create-next-app@latest";
+    createNextAppCommand += ` ${directory}`;
+    createNextAppCommand += " --typescript --tailwind --eslint";
+    if (router === "app") {
+      createNextAppCommand += " --app";
+    } else {
+      createNextAppCommand += " --no-app";  // Explicitly disable app directory
+    }
+    if (useSrc) {
+      createNextAppCommand += " --src-dir";
+    }
+
+    execSync(createNextAppCommand, { stdio: "inherit" });
 
     // Change to target directory
     process.chdir(targetDir);
 
     // Create additional CMS-specific directories
     console.log("Adding CMS-specific files...");
-    
+
     const baseDir = useSrc ? "src" : "";
     const cmsDirectories = [
       "content",
@@ -1288,99 +1349,98 @@ export async function initProject(options: InitOptions): Promise<void> {
     );
 
     // Create CMS components and services
-    fs.writeFileSync(
-      `${baseDir}/components/editor/EditorPage.tsx`,
-      EDITOR_COMPONENT
-    );
+    const componentsToCreate = [
+      {
+        dir: `${baseDir}/components/editor`,
+        files: [
+          { name: "EditorPage.tsx", content: EDITOR_COMPONENT },
+          { name: "FileTree.tsx", content: FILE_TREE_COMPONENT },
+          { name: "EditorToolbar.tsx", content: EDITOR_TOOLBAR_COMPONENT },
+        ],
+      },
+      {
+        dir: `${baseDir}/components/home`,
+        files: [
+          { name: "ContentDisplay.tsx", content: CONTENT_DISPLAY_COMPONENT },
+        ],
+      },
+    ];
 
-    fs.writeFileSync(
-      `${baseDir}/components/editor/FileTree.tsx`,
-      FILE_TREE_COMPONENT
-    );
+    // Create component directories and files
+    componentsToCreate.forEach(({ dir, files }) => {
+      fs.mkdirSync(dir, { recursive: true });
+      files.forEach(({ name, content }) => {
+        fs.writeFileSync(path.join(dir, name), content);
+      });
+    });
 
-    fs.writeFileSync(
-      `${baseDir}/components/editor/EditorToolbar.tsx`,
-      EDITOR_TOOLBAR_COMPONENT
-    );
+    fs.writeFileSync(`${baseDir}/services/contentService.ts`, SERVICE_TEMPLATE);
 
-    fs.writeFileSync(
-      `${baseDir}/services/contentService.ts`,
-      SERVICE_TEMPLATE
-    );
+    fs.writeFileSync(`${baseDir}/services/gitService.ts`, GIT_SERVICE_TEMPLATE);
 
-    fs.writeFileSync(
-      `${baseDir}/services/gitService.ts`,
-      GIT_SERVICE_TEMPLATE
-    );
+    fs.writeFileSync(`${baseDir}/store/editorStore.ts`, EDITOR_STORE);
 
-    fs.writeFileSync(
-      `${baseDir}/store/editorStore.ts`,
-      EDITOR_STORE
-    );
-
-    // Create API routes based on router type
+    // Create API routes and pages based on router type
     if (router === "app") {
-      const apiDir = `${baseDir}/app/api`;
-      fs.mkdirSync(`${apiDir}/content`, { recursive: true });
-      fs.mkdirSync(`${apiDir}/git/[action]`, { recursive: true });
-      
-      fs.writeFileSync(
-        `${apiDir}/content/route.ts`,
-        CONTENT_API_APP
-      );
-      
-      fs.writeFileSync(
-        `${apiDir}/git/[action]/route.ts`,
-        GIT_API_APP
-      );
-
-      // Create editor page
+      // Create app directory structure
+      fs.mkdirSync(`${baseDir}/app`, { recursive: true });
+      fs.mkdirSync(`${baseDir}/app/api/content`, { recursive: true });
+      fs.mkdirSync(`${baseDir}/app/api/git/[action]`, { recursive: true });
       fs.mkdirSync(`${baseDir}/app/editor`, { recursive: true });
-      fs.writeFileSync(
-        `${baseDir}/app/editor/page.tsx`,
-        EDITOR_PAGE_CONTENT
-      );
 
+      // Create API routes
+      fs.writeFileSync(`${baseDir}/app/api/content/route.ts`, CONTENT_API_APP);
+      fs.writeFileSync(`${baseDir}/app/api/git/[action]/route.ts`, GIT_API_APP);
+
+      // Create app pages
+      fs.writeFileSync(`${baseDir}/app/globals.css`, GLOBAL_CSS);
+      fs.writeFileSync(`${baseDir}/app/page.tsx`, HOME_PAGE_CONTENT);
+      fs.writeFileSync(`${baseDir}/app/layout.tsx`, LAYOUT_CONTENT);
+      fs.writeFileSync(`${baseDir}/app/editor/page.tsx`, EDITOR_PAGE_CONTENT);
     } else {
-      const apiDir = `${baseDir}/pages/api`;
-      fs.mkdirSync(`${apiDir}/git`, { recursive: true });
-      
-      fs.writeFileSync(
-        `${apiDir}/content.ts`,
-        CONTENT_API_PAGES
-      );
-      
-      fs.writeFileSync(
-        `${apiDir}/git/[action].ts`,
-        GIT_API_PAGES
-      );
-
-      // Create editor page
+      // Create pages directory structure
+      fs.mkdirSync(`${baseDir}/pages`, { recursive: true });
+      fs.mkdirSync(`${baseDir}/pages/api`, { recursive: true });
+      fs.mkdirSync(`${baseDir}/pages/api/git`, { recursive: true });
       fs.mkdirSync(`${baseDir}/pages/editor`, { recursive: true });
-      fs.writeFileSync(
-        `${baseDir}/pages/editor/index.tsx`,
-        EDITOR_PAGE_CONTENT
-      );
+      fs.mkdirSync(`${baseDir}/styles`, { recursive: true });
+
+      // Create API routes
+      fs.writeFileSync(`${baseDir}/pages/api/content.ts`, CONTENT_API_PAGES);
+      fs.writeFileSync(`${baseDir}/pages/api/git/[action].ts`, GIT_API_PAGES);
+
+      // Create pages
+      fs.writeFileSync(`${baseDir}/styles/globals.css`, GLOBAL_CSS);
+      fs.writeFileSync(`${baseDir}/pages/index.tsx`, HOME_PAGE_CONTENT);
+      fs.writeFileSync(`${baseDir}/pages/_app.tsx`, APP_CONTENT);
+      fs.writeFileSync(`${baseDir}/pages/editor/index.tsx`, EDITOR_PAGE_CONTENT);
     }
+
+    // Create shared components directory
+    fs.mkdirSync(`${baseDir}/components/home`, { recursive: true });
+    fs.writeFileSync(
+      `${baseDir}/components/home/ContentDisplay.tsx`,
+      CONTENT_DISPLAY_COMPONENT
+    );
 
     // Update package.json to add CMS dependencies
     const packageJson = JSON.parse(fs.readFileSync("package.json", "utf-8"));
     const cmsPackages = {
       "@monaco-editor/react": "^4.6.0",
       "simple-git": "^3.22.0",
-      "zustand": "^4.5.1"
+      zustand: "^4.5.1",
     };
 
     packageJson.dependencies = {
       ...packageJson.dependencies,
-      ...cmsPackages
+      ...cmsPackages,
     };
 
     fs.writeFileSync("package.json", JSON.stringify(packageJson, null, 2));
 
     // Install the new dependencies
     console.log("Installing additional dependencies...");
-    execSync("npm install", { stdio: 'inherit' });
+    execSync("npm install", { stdio: "inherit" });
 
     console.log("\n✨ Project initialized successfully!");
     console.log("\nNext steps:");
@@ -1393,6 +1453,8 @@ export async function initProject(options: InitOptions): Promise<void> {
   } catch (error) {
     // Return to original directory in case of error
     process.chdir(originalDir);
-    throw new Error(`Failed to initialize project: ${(error as Error).message}`);
+    throw new Error(
+      `Failed to initialize project: ${(error as Error).message}`
+    );
   }
 }
